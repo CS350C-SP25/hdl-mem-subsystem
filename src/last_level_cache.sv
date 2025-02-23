@@ -35,6 +35,37 @@ endmodule : last_level_cache
 // You may choose to make this DDR4 controller as a separate module which is
 // used by your LLC, or you may choose to delete the below declaration include
 // the design in the LLC module.
-module ddr4_controller #() ();
+module ddr4_controller #(
+    parameter int REFRESH = 64
+) (
+    input logic rst_N_in,
+    input logic clk_in
+);
+    logic refresh;
+    // once timer becomes 1, refresh all banks => wait 100 microseconds (or if our clock is 1 GHz, wait 1 ns)
+    autorefresh #(.REFRESH(REFRESH)) a_rfr(clk_in, rst_N_in, refresh);
 
 endmodule : ddr4_controller
+
+// adjust refresh param based on the actual clock, currently assuming 1 GHz clock => 64 ms = 64,000,000 ns
+module autorefresh #(
+    parameter int REFRESH = 64_000_000
+) (
+    input logic clk_in,
+    input logic rst_in,
+    output logic refresh
+);
+    localparam WIDTH = $clog2(REFRESH)
+    logic [WIDTH-1:0] count;
+    always_ff @(posedge clk or posedge rst_in) begin
+        if (rst_in) begin
+            count <= 0;
+            refresh <= 0;
+        end else if (count == REFRESH - 1) begin
+            count <= 0;
+            refresh <= ~refresh;
+        end else begin
+            count <= count + 1;
+        end
+    end 
+endmodule : autorefresh
