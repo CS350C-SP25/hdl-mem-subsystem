@@ -71,21 +71,41 @@ module autorefresh #(
 endmodule : autorefresh
 
 module address_parser #(
+    parameter int A = 8,
+    parameter int B = 64,
+    parameter int C = 16384,
     parameter int BUS_WIDTH = 16,  // bus width per chip
-    parameter int BANKS = 8,       // banks per group
+    parameter int BANK_GROUPS = 8,
+    parameter int BANKS_PER_GROUP = 8,       // banks per group
     parameter int ROW_BITS = 8,    // bits to address rows
     parameter int COL_BITS = 4     // bits to address columns
 ) (
-    input logic [63:0]                  l1d_addr_in,
-    output logic [$clog2(BANKS)-1:0]    bank_out,
-    output logic [ROW_BITS-1:0]         row_out,
-    output logic [COL_BITS-1:0]         col_out
+    input logic [63:0]                          l1d_addr_in,
+    output logic [$clog2(BANK_GROUPS)]          bank_group_out,
+    output logic [$clog2(BANKS_PER_GROUP)-1:0]  bank_out,
+    output logic [ROW_BITS-1:0]                 row_out,
+    output logic [COL_BITS-1:0]                 col_out
 );
+
+    // Associativity: 8, block size = 16, capacity = 16384
+    localparam int num_sets = C / (A * B);
+    // Block offset =  bits
+    localparam int block_offset_bits = $clog2(B);
+    localparam int set_index_bits = $clog2(num_sets);
+    localparam int tag_bits = 64 - block_offset_bits - set_index_bits;
 
     localparam int BANK_BITS = $clog2(BANKS);
 
     // Need to reevaluate after the design review. Current assumptions:
     // The bank, row, and column address are stored at the lower bits of the address in, leaving the remaining more significant bits for other info
+
+    // Proposed mapping for now: 
+    /*
+    Cache:  [    52-bit Tag    ][6-bit Set Index][  6-bit Block Offset  ]
+    DDR4:   [Unused][Row][BankGroup][  Bank  ][    Column    ]
+                        [  44  ][ 8 ][    3    ][   6   ][      4       ]
+
+    */
 
     assign bank_out = address_in[BANK_BITS + ROW_BITS + COL_BITS - 1: ROW_BITS + COL_BITS];
     assign row_out = address_in[ROW_POS + COL_BITS: COL_BITS];
