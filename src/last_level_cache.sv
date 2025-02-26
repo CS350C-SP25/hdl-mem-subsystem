@@ -69,3 +69,27 @@ module autorefresh #(
         end
     end 
 endmodule : autorefresh
+
+module address_parser #(
+    parameter int BUS_WIDTH = 16,  // bus width per chip
+    parameter int BANKS = 8,       // banks per group
+    parameter int ROW_BITS = 8,    // bits to address rows
+    parameter int COL_BITS = 4     // bits to address columns
+) (
+    input logic [63:0]                  l1d_addr_in,
+    output logic [$clog2(BANKS)-1:0]    bank_out,
+    output logic [ROW_BITS-1:0]         row_out,
+    output logic [COL_BITS-1:0]         col_out
+);
+
+    localparam int BANK_BITS = $clog2(BANKS);
+
+    // Need to reevaluate after the design review. Current assumptions:
+    // The bank, row, and column address are stored at the lower bits of the address in, leaving the remaining more significant bits for other info
+
+    assign bank_out = address_in[BANK_BITS + ROW_BITS + COL_BITS - 1: ROW_BITS + COL_BITS];
+    assign row_out = address_in[ROW_POS + COL_BITS: COL_BITS];
+    assign column_out = address_in[COL_POS: 0];
+
+
+endmodule
