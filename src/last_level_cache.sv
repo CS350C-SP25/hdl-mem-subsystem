@@ -70,6 +70,137 @@ module autorefresh #(
     end 
 endmodule : autorefresh
 
+
+module request_scheduler #(
+    parameter int A = 8,
+    parameter int B = 64,
+    parameter int C = 16384,
+    parameter int BUS_WIDTH = 16,  // bus width per chip
+    parameter int BANK_GROUPS = 8,
+    parameter int BANKS_PER_GROUP = 8,       // banks per group
+    parameter int ROW_BITS = 8,    // bits to address rows
+    parameter int COL_BITS = 4,     // bits to address columns
+    parameter int QUEUE_SIZE=16 // set this, play around with it
+) (
+    input logic clk_in,
+    input logic rst_in,
+    input logic [$clog2(BANK_GROUPS)-1:0] bank_group_in,
+    input logic [$clog2(BANKS_PER_GROUP)-1:0] bank_in,
+    input logic [ROW_BITS-1:0] row_in,
+    input logic [COL_BITS-1:0] col_in,
+    input logic valid_in, // if not valid ignore
+    input logic write_in, // if val is ok to write (basically write request)
+    input logic [63:0] val_in, // val to write if write
+    input logic precharged, // is row already precharged?
+    input logic cmd_ready, // is controller ready to receive command
+
+    output logic [$clog2(BANK_GROUPS)-1:0] bank_group_out,
+    output logic [$clog2(BANKS_PER_GROUP)-1:0] bank_out,
+    output logic [ROW_BITS-1:0] row_out,
+    output logic [COL_BITS-1:0] col_out,
+    output logic [2:0] cmd_out, // 0 is read, 1 is write, 2 is activate, 3 is precharge, 4 is block
+    output logic valid_out,
+);
+    typedef struct packed {
+        logic [$clog2(BANK_GROUPS)-1:0] bank_group,
+        logic [$clog2(BANKS_PER_GROUP)-1:0] bank,
+        logic [ROW_BITS-1:0] row,
+        logic [COL_BITS-1:0] col,
+        logic [2:0] state, // 000 nothing (needs everything), 001 precharge pending, 010 activate ready, 011 activate pending, 100 r/w ready, 101 r/w pending, 110 r/w done
+        logic [1:0] wait_cycles, // max 3 cycle occupancy
+        logic valid
+    } read_request_t;
+
+    typedef struct packed {
+        logic [$clog2(BANK_GROUPS)-1:0] bank_group,
+        logic [$clog2(BANKS_PER_GROUP)-1:0] bank,
+        logic [ROW_BITS-1:0] row,
+        logic [COL_BITS-1:0] col,
+        logic [63:0] val_in,
+        logic [2:0] state, // 000 nothing (needs everything), 001 precharge pending, 010 activate ready, 011 activate pending, 100 r/w ready, 101 r/w pending, 110 r/w done
+        logic [1:0] wait_cycles, // max 3 cycle occupancy
+        logic valid // do we need this?
+    } write_request_t;
+
+    // Function to set fields of a read request
+    function automatic void init_read_req(
+        output read_request_t req,
+        input logic [$clog2(BANK_GROUPS)-1:0] bg,
+        input logic [$clog2(BANKS_PER_GROUP)-1:0] b,
+        input logic [ROW_BITS-1:0] r,
+        input logic [COL_BITS-1:0] c,
+        input logic precharged
+    );
+        req.bank_group = bg;
+        req.bank = b;
+        req.row = r;
+        req.col = c;
+        req.state = precharged ? 3'b010 : 3'b000; // if its already precharged skip to ready for activation
+        req.wait_cycles = 2'b00;
+        req.valid = 1'b1;
+    endfunction
+
+    // Function to set fields of a write request
+    function automatic void init_write_req(
+        output write_request_t req,
+        input logic [$clog2(BANK_GROUPS)-1:0] bg,
+        input logic [$clog2(BANKS_PER_GROUP)-1:0] b,
+        input logic [ROW_BITS-1:0] r,
+        input logic [COL_BITS-1:0] c,
+        input logic [63:0] data,
+        input logic precharged
+    );
+        req.bank_group = bg;
+        req.bank = b;
+        req.row = r;
+        req.col = c;
+        req.val_in = data;
+        req.state = precharged ? 3'b010 : 3'b000; // precharged ? skip to activation stage
+        req.wait_cycles = 2'b00;
+        req.valid = 1'b1;
+    endfunction
+
+    read_request_t read_queue[QUEUE_SIZE-1:0];
+    write_request_t write_queue[QUEUE_SIZE-1:0];
+    logic [$clog2(QUEUE_SIZE)-1:0] read_queue_head;
+    logic [$clog2(QUEUE_SIZE)-1:0] write_queue_head;
+    logic [$clog2(QUEUE_SIZE)-1:0] read_queue_len;
+    logic [$clog2(QUEUE_SIZE)-1:0] write_queue_len;
+
+    always_ff @(posedge clk_in or posedge rst_in) begin
+        if (rst_in) begin
+            read_queue_len <= 0;
+            write_queue_len <= 0;
+            read_queue_head <= 0;
+            write_queue_head <= 0;
+        end
+        // TODO every clock cycle we need to determine which request to take a look at, then which command to issue based on that request
+    end
+
+    always_comb begin
+        if (valid_in) begin
+            if (write_in) begin
+                if (write_queue_len >= QUEUE_SIZE) begin
+                    cmd_out <= 3'b100; // block
+                end
+                else begin
+                    localparam write_queue_tail = write_queue_head + write_queue_len;
+                    init_write_req(write_queue[write_queue_tail], bank_group_in, bank_in, row, col, val_in, precharged);
+                end
+            end else begin
+                if (read_queue_len >= QUEUE_SIZE) begin
+                    cmd_out <= 3'b100; // block
+                end
+                else begin
+                    localparam read_queue_tail = read_queue_head + read_queue_len;
+                    init_read_req(read_queue[read_queue_tail], bank_group_in, bank_in, row, col, precharged);
+                end
+            end
+        end
+    end
+
+endmodule: request_scheduler
+
 module address_parser #(
     parameter int A = 8,
     parameter int B = 64,
