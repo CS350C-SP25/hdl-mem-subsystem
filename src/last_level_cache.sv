@@ -121,6 +121,86 @@ module autorefresh #(
     end 
 endmodule : autorefresh
 
+module sdram_bank_state #(
+    parameter ROW_WIDTH = 14, // Number of bits to address rows (e.g., 14 bits for 16k rows)
+    parameter NUM_GROUPS = 2, // Number of bank groups
+    parameter BANKS_PER_GROUP = 2, // Number of banks per group
+    parameter BANKS = NUM_GROUPS * BANKS_PER_GROUP // Total number of banks
+)(
+    input logic clk,               // Clock
+    input logic rst,               // Reset
+    input logic [BANKS-1:0] bank_enable,  // Enable signal for each bank (1: enabled, 0: disabled)
+    input logic [BANKS-1:0] precharge,    // Precharge signal for each bank (1: precharge, 0: no precharge)
+    input logic [BANKS-1:0] activate,     // Activate signal for each bank (1: activate, 0: no activate)
+    input logic [ROW_WIDTH-1:0] row_address, // Row address to activate
+    input logic [BANKS-1:0] request_data,  // Request data signal for each bank
+    output logic [ROW_WIDTH-1:0] active_row_out,  // Active row for a selected bank
+    output logic [BANKS-1:0] ready_to_access, // Bank ready to access (not in precharge)
+    output logic [BANKS-1:0] active_bank      // Bank currently active (activated but not precharged)
+);
+
+    // States for each bank
+    reg [ROW_WIDTH-1:0] active_row [BANKS-1:0];  // Active row address for each bank
+    reg active [BANKS-1:0]; // Active flag for each bank
+    reg ready [BANKS-1:0];  // Ready flag for each bank (not in precharge)
+    
+    // Bank grouping logic
+    reg [NUM_GROUPS-1:0] group_active [BANKS_PER_GROUP-1:0]; // Keeps track of group activations
+    reg [BANKS_PER_GROUP-1:0] group_ready [NUM_GROUPS-1:0];  // Ready state for each group
+
+    // Handle bank state updates on each clock cycle
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst) begin
+            // Reset all states to initial values
+            active_row <= '{default: 0};
+            active <= '{default: 0};
+            ready <= '{default: 1}; // All banks are initially ready (not in precharge)
+            group_active <= '{default: 0};
+            group_ready <= '{default: 1}; // All groups are initially ready (not in precharge)
+        end else begin
+            // For each bank, handle precharge, activation, and data request
+            for (int i = 0; i < BANKS; i++) begin
+                if (bank_enable[i]) begin
+                    if (precharge[i]) begin
+                        // Precharge operation: bank is not active and ready
+                        active[i] <= 0;
+                        ready[i] <= 1;  // Bank is ready after precharge
+                    end else if (activate[i]) begin
+                        // Activate operation: store the row address and mark the bank as active
+                        active_row[i] <= row_address;
+                        active[i] <= 1; // Bank is active
+                        ready[i] <= 0;  // Bank is not ready during activation
+                    end else if (request_data[i] && active[i]) begin
+                        // Data request: The bank must be active
+                        // Here, you can add logic to fetch the requested data from the active row
+                    end
+                end
+            end
+        end
+    end
+
+    // Group management
+    always_ff @(posedge clk) begin
+        for (int g = 0; g < NUM_GROUPS; g++) begin
+            // If any bank in the group is activated, mark the group as active
+            group_active[g] <= |(activate[g*BANKS_PER_GROUP +: BANKS_PER_GROUP]);
+            
+            // If all banks in the group are in ready state, mark the group as ready
+            group_ready[g] <= &ready[g*BANKS_PER_GROUP +: BANKS_PER_GROUP];
+        end
+    end
+
+    // Outputs for each bank and group
+    assign active_row_out = active_row[0]; // Example output, can modify based on the active bank/group selection
+    assign ready_to_access = ready;        // Ready to access signals for each bank
+    assign active_bank = active;          // Active bank signals
+    
+    // Example: Optionally, you can assign the group-ready state or active state
+    // based on a specific bank or group.
+    // You can also output the active row of a specific group by selecting which
+    // bank or group is relevant at any given time.
+
+endmodule
 
 module request_scheduler #(
     parameter int A = 8,
@@ -133,7 +213,8 @@ module request_scheduler #(
     parameter int COL_BITS = 4,     // bits to address columns
     parameter int QUEUE_SIZE = 16, // set this, play around with it
     parameter int ACTIVATION_LATENCY = 8,
-    parameter int PRECHARGE_LATENCY = 5
+    parameter int PRECHARGE_LATENCY = 5, 
+    parameter int BANKS = BANK_GROUPS * BANKS_PER_GROUP;
 ) (
     input logic clk_in,
     input logic rst_in,
@@ -161,23 +242,33 @@ module request_scheduler #(
         logic [COL_BITS-1:0] col,
         logic [63:0] val_in,
         logic [2:0] state, // 000 nothing (needs everything), 001 precharge pending, 010 activate ready, 011 activate pending, 100 r/w ready, 101 r/w pending, 110 r/w done
-        logic [3:0] wait_cycles, // max 8 cycle occupancy (hardcoded for now)
+        logic [31:0] cycle_count // cycle counter of when the last state was set
         logic write,
         logic valid // do we need this?
     } mem_request_t;
 
     typedef struct packed {
-        mem_request_t queue[QUEUE_SIZE-1:0],
-        logic [$clog2(QUEUE_SIZE)-1:0] head;
-        logic [$clog2(QUEUE_SIZE)-1:0] size;
-    } req_queue_t;
+        logic enqueue_in,
+        logic dequeue_in,
+        logic transfer_ready, // command is available 
+        mem_request_t req_in,
+        mem_request_t ready_top_out,
+        mem_request_t pending_top_out,
+        logic ready_empty_out, // if empty then top doesnt matter
+        logic pending_empty_out,
+        logic promote
+    } mem_queue_params;
 
-    function automatic void rst_req_queue(
-        output req_queue_t r_queue
-    );
-        r_queue.head = 0;
-        r_queue.size = 0;
-    endfunction
+    typedef struct packed {
+        logic [BANKS-1:0] bank_enable,  // Enable signal for each bank (1: enabled, 0: disabled)
+        logic [BANKS-1:0] precharge,    // Precharge signal for each bank (1: precharge, 0: no precharge)
+        logic [BANKS-1:0] activate,     // Activate signal for each bank (1: activate, 0: no activate)
+        logic [ROW_BITS-1:0] row_address, // Row address to activate
+        logic [BANKS-1:0] request_data,  // Request data signal for each bank
+        logic [ROW_BITS-1:0] active_row_out,  // Active row for a selected bank
+        logic [BANKS-1:0] ready_to_access, // Bank ready to access (not in precharge)
+        logic [BANKS-1:0] active_bank 
+    } bank_state_params;
 
     // Function to set fields of a write request
     function automatic void init_mem_req(
@@ -187,6 +278,7 @@ module request_scheduler #(
         input logic [ROW_BITS-1:0] r,
         input logic [COL_BITS-1:0] c,
         input logic [63:0] data,
+        input logic [31:0] cycle_count,
         input logic write,
         input logic [2:0] state
     );
@@ -196,81 +288,213 @@ module request_scheduler #(
         req.col = c;
         req.val_in = data;
         req.state = state; // precharged ? skip to activation stage
-        req.wait_cycles = 3'b0;
+        req.cycle_count = cycle_count;
         req.valid = 1'b1;
         req.write = write;
     endfunction
 
-    function automatic void enqueue(
-        output req_queue_t r_queue,
-        input mem_request_t in_req,
-        input logic [2:0] state
+    // submodule for handling memory request queues
+    module mem_req_queue #(
+        parameter QUEUE_SIZE=16
+    ) (
+        input logic clk_in,
+        input logic rst_in,
+        input logic enqueue_in,
+        input logic dequeue_in,
+        input mem_request_t req_in,
+        input logic [31:0] cycle_count,
+        output mem_request_t req_out,
+        output logic empty,
+        output logic full
     );
-        // TODO what if queue is full? how do we block?
-        init_mem_req(
-            r_queue.queue[(r_queue.head + r_queue.size) % QUEUE_SIZE],
-            req.bank_group,
-            req.bank,
-            req.row,
-            req.col,
-            req.val_in,
-            req.data,
-            req.write,
-            state
-        );
-        r_queue.size <= r_queue.size + 1;
-    endfunction
+        mem_request_t queue[QUEUE_SIZE-1:0];
+        logic [$clog2(QUEUE_SIZE)-1:0] head;
+        logic [$clog2(QUEUE_SIZE)-1:0] size;
+        always_ff @(posedge clk_in or posedge rst_in) begin
+            if (rst_in) begin
+                head <= 0;
+                size <= 0;
+            end else begin
+            end
+        end
 
-    req_queue_t read_queue;
-    req_queue_t write_queue;
-    req_queue_t precharge_queue;
-    req_queue_t activation_queue;
+        always_ff @(posedge clk_in) begin
+            if (enqueue_in && !full) begin
+                queue[(head + size) % QUEUE_SIZE] <= req_in;
+                size <= size + 1;
+            end
+        end
+
+        always_ff @(posedge clk_in) begin
+            if (dequeue_in && !full) begin
+                size <= size - 1;
+                head <= (head + 1) % QUEUE_SIZE;
+            end
+        end
+        // Full & Empty Flags
+        assign req_out = queue[head];
+        assign full = (size == QUEUE_SIZE);
+        assign empty = (size == 0);
+    endmodule: mem_req_queue;
+
+    // submodule for handling the actual commands, serves as a wrapper for a double queue
+    module mem_cmd_queue #(
+        parameter QUEUE_SIZE = 16,
+        parameter LATENCY = 0, // DEFINITELY CHANGE THIS
+    ) (
+        input logic clk_in,
+        input logic rst_in,
+        input logic enqueue_in,
+        input logic transfer_ready, // command is available 
+        input mem_request_t req_in,
+        input logic [31:0] cycle_count,
+        output mem_request_t ready_top_out,
+        output mem_request_t pending_top_out,
+        output logic ready_empty_out, // if empty then top doesnt matter
+        output logic pending_empty_out,
+        output logic promote // if pending_top_out needs to be dequeued and promoted to the next queue 
+    );
+        logic transfer;
+        logic ready_empty;
+        logic ready_full;
+        logic pending_empty;
+        logic pending_full;
+        mem_request_t ready_top;
+        mem_request_t ready_top_reg; // register to maintain state for timing issues
+        mem_request_t pending_top;
+
+        mem_req_queue #(QUEUE_SIZE) ready(
+            .clk_in(clk_in), 
+            .rst_in(rst_in), 
+            .enqueue_in(enqueue_in), 
+            .dequeue_in(transfer), 
+            .req_in(req_in), 
+            .cycle_count(cycle_count), 
+            .req_out(ready_top), 
+            .empty(ready_empty), 
+            .full(ready_full)
+        );
+        mem_req_queue #(QUEUE_SIZE) pending(
+            .clk_in(clk_in), 
+            .rst_in(rst_in), 
+            .enqueue_in(transfer), 
+            .dequeue_in(promote), 
+            .req_in(ready_top_reg), 
+            .cycle_count(cycle_count), 
+            .req_out(pending_top), 
+            .empty(pending_empty), 
+            .full(pending_full)
+        );
+
+        // necessary to prevent timing issues with dequeue
+        always_ff @(posedge promote) begin
+            pending_top_out <= pending_top;
+        end
+
+        always_ff @(posedge transfer) begin
+            ready_top_reg <= ready_top;
+        end
+
+        assign ready_top_out = ready_top_out;
+        assign ready_empty_out = ready_empty;
+        assign pending_empty_out = pending_empty;
+        // promote to next queue
+        assign promote = !pending_empty & (pending_top.cycle_count + LATENCY <= cycle_counter);
+        
+    endmodule: mem_cmd_queue;
+
+    logic [31:0] cycle_counter;
+    logic [$clog2(BANK_GROUPS) + $clog2(BANKS_PER_GROUP) - 1:0] bank_idx;
+    bank_state_params bank_state_params;
+    mem_queue_params read_params;
+    mem_queue_params write_params;
+    mem_queue_params precharge_params;
+    mem_queue_params activation_params;
+    assign bank_idx = bank_group_in * bank_in;
+
+    sdram_bank_state #(
+        .ROW_WIDTH(ROW_BITS),
+        .NUM_GROUPS(BANK_GROUPS),
+        .BANKS_PER_GROUP(BANKS_PER_GROUP)
+    ) bank_state(
+        clk, 
+        rst,
+        bank_state_params.bank_enable, 
+        bank_state_params.precharge, 
+        bank_state_params.activate, 
+        bank_state_params.row_address, 
+        bank_state_params.request_data, 
+        bank_state_params.active_row_out,  
+        bank_state_params.ready_to_access, 
+        bank_state_params.active_bank 
+    );
+
+    // step 3b. enqueues if activation_queue is promoting its top element and not a write request. dequeues when promote is active
+    mem_req_queue #(.QUEUE_SIZE(16)) read_queue (
+        .clk_in(clk_in),
+        .rst_in(rst_in),
+        .enqueue_in(activation_params.promote & !activation_params.pending_top_out.write),
+        .transfer_ready(read_params.transfer_ready),
+        .req_in(activation_params.pending_top_out),
+        .cycle_count(cycle_counter),
+        .ready_top_out(read_params.ready_top_out),
+        .pending_top_out(ready_params.pending_top_out),
+        .ready_empty(read_params.ready_empty),
+        .pending_empty(read_params.pending_empty),
+        .promote(read_params.promote)
+    );
+
+    // step 3a. enqueues if activation_queue is promoting its top element and its a write request. dequeues when promote
+    mem_req_queue #(.QUEUE_SIZE(16)) write_queue (
+        .clk_in(clk_in),
+        .rst_in(rst_in),
+        .enqueue_in(activation_params.promote & activation_params.pending_top_out.write),
+        .transfer_ready(write_params.transfer_ready),
+        .req_in(activation_params.pending_top_out),
+        .cycle_count(cycle_counter),
+        .ready_top_out(write_params.ready_top_out),
+        .pending_top_out(ready_params.pending_top_out),
+        .ready_empty(write_params.ready_empty),
+        .pending_empty(write_params.pending_empty),
+        .promote(write_params.promote)
+    );
+
+    // step 1. precharge_queue enqueues every request. if the queue decides its ready for promotion, it will be dequeued
+    mem_req_queue #(.QUEUE_SIZE(16)) precharge_queue (
+        .clk_in(clk_in),
+        .rst_in(rst_in),
+        .enqueue_in(precharge_params.enqueue),
+        .transfer_ready(precharge_params.transfer_ready),
+        .req_in(precharge_params.req_in),
+        .cycle_count(cycle_counter),
+        .ready_top_out(precharge_params.ready_top_out),
+        .pending_top_out(ready_params.pending_top_out),
+        .ready_empty(precharge_params.ready_empty),
+        .pending_empty(precharge_params.pending_empty),
+        .promote(precharge_params.promote)
+    );
+
+    // step 2. activation_queue only enqueues when precharge queue decides to promote its top element, dequeues when activation_params decides to promote
+    mem_req_queue #(.QUEUE_SIZE(16)) activation_queue (
+        .clk_in(clk_in),
+        .rst_in(rst_in),
+        .enqueue_in(precharge_params.promote),
+        .transfer_ready(activation_params.transfer_ready),
+        .req_in(precharge_params.pending_top_out),
+        .cycle_count(cycle_counter),
+        .ready_top_out(activation_params.ready_top_out),
+        .pending_top_out(ready_params.pending_top_out),
+        .ready_empty(activation_params.ready_empty),
+        .pending_empty(activation_params.pending_empty),
+        .promote(activation_params.promote)
+    );
+
 
     always_ff @(posedge clk_in or posedge rst_in) begin
         if (rst_in) begin
-            rst_req_queue(read_queue);
-            rst_req_queue(write_queue);
-            rst_req_queue(precharge_queue);
-            rst_req_queue(activation_queue);
-        end
-        // MANAGERIAL STUFF - decrease wait cycles every cycle, pop off queues, add to new queues, etc...
-        // update all requests waitcycles
-        for (int i = 0; i < precharge_queue.size; i++) begin
-            int idx = (i + precharge_queue.head) % QUEUE_SIZE;
-            mem_request_t req = precharge_queue.queue[idx];
-            // if precharge pending decrease wait cycles; if its 0 time to pop off queue
-            if (req.valid && req.state == 3'b001 ) begin
-                req.wait_cycles <= req.wait_cycles - 1;
-                if (req.wait_cycles == 3'b0) begin
-                    req.valid = 1'b0;
-                    // pop onto the next queue
-                    enqueue(activation_queue, req, 3'b010);
-                end
-            end
-            // clear the front of the queue
-            if (!req.valid && idx == precharge_queue.head) begin
-                precharge_queue.head <= (precharge_queue.head + 1) % QUEUE_SIZE;
-                precharge_queue.size <= precharge_queue.size - 1;
-            end
-        end
-        for (int i = 0; i < activation_queue.size; i++) begin
-            int idx = (i + activation_queue.head) % QUEUE_SIZE;
-            mem_request_t req = activation_queue.queue[idx];
-            if (req.valid && req.state == 3'b011 ) begin
-                req.wait_cycles <= req.wait_cycles - 1;
-                if (req.wait_cycles == 3'b0) begin
-                    req.valid = 1'b0;
-                    if (req.write) begin
-                        enqueue(write_queue, req, 3'b100);
-                    end else begin
-                        enqueue(read_queue, req, 3'b100);
-                    end
-                end
-            end
-            if (!req.valid && idx == activation_queue.head) begin
-                activation_queue.head <= (activation_queue.head + 1) % QUEUE_SIZE;
-                activation_queue.size <= activation_queue.size - 1;
-            end
+            cycle_counter <= 0;
+        end else begin
+            cycle_counter <= cycle_counter + 1;
         end
     end
 
@@ -279,17 +503,31 @@ module request_scheduler #(
             if (precharge_queue.size >= QUEUE_SIZE) begin
                 cmd_out <= 3'b100; // block
             end else begin
-                // TODO if its already precharged or activated skip those steps, we need to keep track of whats precharged/activated
                 init_mem_req(
-                    precharge_queue.queue[(precharge_queue.head + precharge_queue.size) % QUEUE_SIZE],
+                    precharge_params.req_in,
                     bank_group_in,
                     bank_in,
                     row,
                     col,
                     val_in,
+                    cycle_counter,
                     write_in,
                     3'b000
                 );
+                if (bank_state_params.ready_to_access[bank_idx]) begin
+                    // precharged but not activated
+                    // TODO we need to update all the queues to take in a special req_in. if its a 1st level add (here) prioritize that over the promotion. 
+                    activation_params.enqueue = 1'b1;
+                end else if (bank_state_params.active_bank[bank_idx]) begin
+                    // active bank, put it in its respective queue
+                    if (write_in) begin
+                        write_params.enqueue = 1'b1;
+                    end else begin
+                        read_params.enqueue = 1'b1;
+                    end
+                end else begin
+                    precharge_params.enqueue = 1'b1;
+                end
             end
         end
     end
