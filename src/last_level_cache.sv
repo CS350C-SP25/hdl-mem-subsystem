@@ -653,8 +653,10 @@ endmodule
 
 // CLB to assemble commands from scheduler for DIMM
 module command_clb #(
-    parameter int ROW_BITS = 8,  // log2(ROWS)
-    parameter int COL_BITS = 4,  // log2(COLS)
+    parameter int BANK_GROUPS = 8,
+    parameter int BANKS_PER_GROUP = 8,       // banks per group
+    parameter int ROW_BITS = 8,    // bits to address rows
+    parameter int COL_BITS = 4     // bits to address columns
 ) (
 
     // Inputs from request_scheduler
@@ -669,12 +671,12 @@ module command_clb #(
     output logic act_out,
     output logic [16:0] dram_addr_out,  // row/col or special bits.
     output logic [$clog2(BANK_GROUPS)-1:0] bank_group_out,
-    output logic [$clog2(BANKS_PER_GROUP)-1:0] bank_out,
+    output logic [$clog2(BANKS_PER_GROUP)-1:0] bank_out
 
 );
 
     // Commands enum
-    typedef enum logic {
+  typedef enum logic[2:0] {
         READ = 3'b000,
         WRITE = 3'b001,
         ACTIVATE = 3'b010,
@@ -682,14 +684,15 @@ module command_clb #(
     } commands;
 
     logic ras, cas, we;
-    logic [16:0] dram_addr_temp;
 
     always_comb begin
-        dram_addr_temp[ROW_BITS-1:COL_BITS] = row_in[ROW_BITS-1:COL_BITS];
 
         // If row activation
         if (cmd_in == ACTIVATE) begin
             act_out = '0; // Deactivate command pin
+            ras = '0;
+          	cas = '0;
+          	we = '0;
 
             // Left-pad row address with 0's if row width is smaller than address width
             dram_addr_out = {{(17-ROW_BITS){1'b0}}, row_in};
@@ -700,18 +703,26 @@ module command_clb #(
 
             // Set command pins
             case (cmd_in)
-                READ:
+                READ: begin
                     ras = '1;
                     cas = '0;
                     we = '1;
-                WRITE:
+                end
+                WRITE: begin
                     ras = '1;
                     cas = '0;
                     we = '0;
-                PRECHARGE:
+                end
+                PRECHARGE: begin
                     ras = '0;
                     cas = '1;
                     we = '0;
+                end
+              	default: begin // Should not get here
+                  ras = 'x;
+                  cas = 'x;
+                  we = 'x;
+                end
             // TODO: add valid check for BLOCK
             endcase
             // A10 is unused for commands, but could be used to indicate auto-precharge
