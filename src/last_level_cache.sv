@@ -133,7 +133,7 @@ module sdram_bank_state #(
     input logic [BANKS-1:0] precharge,    // Precharge signal for each bank (1: precharge, 0: no precharge)
     input logic [BANKS-1:0] activate,     // Activate signal for each bank (1: activate, 0: no activate)
     input logic [ROW_WIDTH-1:0] row_address, // Row address to activate
-    input logic [BANKS-1:0] request_data,  // Request data signal for each bank
+    input logic [$clog2(BANKS)-1:0] request_data,  // Request data signal for a bank
     output logic [ROW_WIDTH-1:0] active_row_out,  // Active row for a selected bank
     output logic [BANKS-1:0] ready_to_access, // Bank ready to access (not in precharge)
     output logic [BANKS-1:0] active_bank      // Bank currently active (activated but not precharged)
@@ -191,7 +191,7 @@ module sdram_bank_state #(
     end
 
     // Outputs for each bank and group
-    assign active_row_out = active_row[0]; // Example output, can modify based on the active bank/group selection
+    assign active_row_out = active_row[request_data]; // Example output, can modify based on the active bank/group selection
     assign ready_to_access = ready;        // Ready to access signals for each bank
     assign active_bank = active;          // Active bank signals
     
@@ -256,7 +256,8 @@ module request_scheduler #(
         mem_request_t pending_top_out,
         logic ready_empty_out, // if empty then top doesnt matter
         logic pending_empty_out,
-        logic promote
+        logic promote,
+        logic incoming // if theres an incoming request into the scheduler and it needs to be placed in the queue, it takes priority over a promotion
     } mem_queue_params;
 
     typedef struct packed {
@@ -308,6 +309,9 @@ module request_scheduler #(
         output logic full
     );
         mem_request_t queue[QUEUE_SIZE-1:0];
+        mem_request_t next_queue[QUEUE_SIZE-1:0];
+        logic [$clog2(QUEUE_SIZE)-1:0] next_head;
+        logic [$clog2(QUEUE_SIZE)-1:0] next_size;
         logic [$clog2(QUEUE_SIZE)-1:0] head;
         logic [$clog2(QUEUE_SIZE)-1:0] size;
         always_ff @(posedge clk_in or posedge rst_in) begin
@@ -319,16 +323,21 @@ module request_scheduler #(
         end
 
         always_ff @(posedge clk_in) begin
-            if (enqueue_in && !full) begin
-                queue[(head + size) % QUEUE_SIZE] <= req_in;
-                size <= size + 1;
-            end
+            queue <= next_queue;
         end
 
-        always_ff @(posedge clk_in) begin
+        always_comb begin
+            next_queue = queue;
+            next_size = size;
+            next_head = head;
+            
+            if (enqueue_in && !full) begin
+                next_queue[(head + size) % QUEUE_SIZE] = req_in;
+                next_size = size + 1;
+            end
             if (dequeue_in && !full) begin
-                size <= size - 1;
-                head <= (head + 1) % QUEUE_SIZE;
+                next_size = size - 1;
+                next_head = (head + 1) % QUEUE_SIZE;
             end
         end
         // Full & Empty Flags
@@ -348,6 +357,7 @@ module request_scheduler #(
         input logic transfer_ready, // command is available 
         input mem_request_t req_in,
         input logic [31:0] cycle_count,
+        input logic promote_ready, // if upper queue is ready for promotion. if it is full or there are incoming requests, those take priority
         output mem_request_t ready_top_out,
         output mem_request_t pending_top_out,
         output logic ready_empty_out, // if empty then top doesnt matter
@@ -378,7 +388,7 @@ module request_scheduler #(
             .clk_in(clk_in), 
             .rst_in(rst_in), 
             .enqueue_in(transfer), 
-            .dequeue_in(promote), 
+            .dequeue_in(promote && promote_ready), 
             .req_in(ready_top_reg), 
             .cycle_count(cycle_count), 
             .req_out(pending_top), 
@@ -387,15 +397,16 @@ module request_scheduler #(
         );
 
         // necessary to prevent timing issues with dequeue
-        always_ff @(posedge promote) begin
-            pending_top_out <= pending_top;
+        always_ff @(posedge clk_in) begin
+            if (promote) begin
+                pending_top_out <= pending_top;
+            end
+            if (transfer) begin
+                ready_top_reg <= ready_top;
+            end
         end
 
-        always_ff @(posedge transfer) begin
-            ready_top_reg <= ready_top;
-        end
-
-        assign ready_top_out = ready_top_out;
+        assign ready_top_out = ready_top_reg;
         assign ready_empty_out = ready_empty;
         assign pending_empty_out = pending_empty;
         // promote to next queue
@@ -406,10 +417,11 @@ module request_scheduler #(
     logic [31:0] cycle_counter;
     logic [$clog2(BANK_GROUPS) + $clog2(BANKS_PER_GROUP) - 1:0] bank_idx;
     bank_state_params bank_state_params;
-    mem_queue_params read_params;
-    mem_queue_params write_params;
-    mem_queue_params precharge_params;
-    mem_queue_params activation_params;
+    mem_queue_params [BANKS-1:0] read_params;
+    mem_queue_params [BANKS-1:0] write_params;
+    mem_queue_params [BANKS-1:0] precharge_params;
+    mem_queue_params [BANKS-1:0] activation_params;
+    
     assign bank_idx = bank_group_in * bank_in;
 
     sdram_bank_state #(
@@ -430,65 +442,87 @@ module request_scheduler #(
     );
 
     // step 3b. enqueues if activation_queue is promoting its top element and not a write request. dequeues when promote is active
-    mem_req_queue #(.QUEUE_SIZE(16)) read_queue (
-        .clk_in(clk_in),
-        .rst_in(rst_in),
-        .enqueue_in(activation_params.promote & !activation_params.pending_top_out.write),
-        .transfer_ready(read_params.transfer_ready),
-        .req_in(activation_params.pending_top_out),
-        .cycle_count(cycle_counter),
-        .ready_top_out(read_params.ready_top_out),
-        .pending_top_out(ready_params.pending_top_out),
-        .ready_empty(read_params.ready_empty),
-        .pending_empty(read_params.pending_empty),
-        .promote(read_params.promote)
-    );
+    genvar i;
+    generate
+        for (i = 0; i < BANKS; i = i + 1) begin : bank_queues
+            // Read Queue
+            mem_req_queue #(.QUEUE_SIZE(16)) read_queue (
+                .clk_in(clk_in),
+                .rst_in(rst_in),
+                .enqueue_in(activation_params[i].promote & !activation_params[i].pending_top_out.write),
+                .transfer_ready(read_params[i].transfer_ready),
+                .req_in(read_params[i].incoming ? read_params[i].req_in : activation_params[i].pending_top_out),
+                .cycle_count(cycle_counter),
+                .promote_ready(1'b1),
+                .ready_top_out(read_params[i].ready_top_out),
+                .pending_top_out(ready_params[i].pending_top_out),
+                .ready_empty(read_params[i].ready_empty),
+                .pending_empty(read_params[i].pending_empty),
+                .promote(read_params[i].promote)
+            );
 
-    // step 3a. enqueues if activation_queue is promoting its top element and its a write request. dequeues when promote
-    mem_req_queue #(.QUEUE_SIZE(16)) write_queue (
-        .clk_in(clk_in),
-        .rst_in(rst_in),
-        .enqueue_in(activation_params.promote & activation_params.pending_top_out.write),
-        .transfer_ready(write_params.transfer_ready),
-        .req_in(activation_params.pending_top_out),
-        .cycle_count(cycle_counter),
-        .ready_top_out(write_params.ready_top_out),
-        .pending_top_out(ready_params.pending_top_out),
-        .ready_empty(write_params.ready_empty),
-        .pending_empty(write_params.pending_empty),
-        .promote(write_params.promote)
-    );
+            // Write Queue
+            mem_req_queue #(.QUEUE_SIZE(16)) write_queue (
+                .clk_in(clk_in),
+                .rst_in(rst_in),
+                .enqueue_in(activation_params[i].promote & activation_params[i].pending_top_out.write),
+                .transfer_ready(write_params[i].transfer_ready),
+                .req_in(write_params[i].incoming ? write_params[i].req_in : activation_params[i].pending_top_out),
+                .cycle_count(cycle_counter),
+                .promote_ready(1'b1),
+                .ready_top_out(write_params[i].ready_top_out),
+                .pending_top_out(ready_params[i].pending_top_out),
+                .ready_empty(write_params[i].ready_empty),
+                .pending_empty(write_params[i].pending_empty),
+                .promote(write_params[i].promote)
+            );
 
-    // step 1. precharge_queue enqueues every request. if the queue decides its ready for promotion, it will be dequeued
-    mem_req_queue #(.QUEUE_SIZE(16)) precharge_queue (
-        .clk_in(clk_in),
-        .rst_in(rst_in),
-        .enqueue_in(precharge_params.enqueue),
-        .transfer_ready(precharge_params.transfer_ready),
-        .req_in(precharge_params.req_in),
-        .cycle_count(cycle_counter),
-        .ready_top_out(precharge_params.ready_top_out),
-        .pending_top_out(ready_params.pending_top_out),
-        .ready_empty(precharge_params.ready_empty),
-        .pending_empty(precharge_params.pending_empty),
-        .promote(precharge_params.promote)
-    );
+            // Precharge Queue
+            mem_req_queue #(.QUEUE_SIZE(16)) precharge_queue (
+                .clk_in(clk_in),
+                .rst_in(rst_in),
+                .enqueue_in(precharge_params[i].enqueue),
+                .transfer_ready(precharge_params[i].transfer_ready),
+                .req_in(precharge_params[i].req_in),
+                .cycle_count(cycle_counter),
+                .promote_ready(!activation_params[i].incoming),
+                .ready_top_out(precharge_params[i].ready_top_out),
+                .pending_top_out(ready_params[i].pending_top_out),
+                .ready_empty(precharge_params[i].ready_empty),
+                .pending_empty(precharge_params[i].pending_empty),
+                .promote(precharge_params[i].promote)
+            );
 
-    // step 2. activation_queue only enqueues when precharge queue decides to promote its top element, dequeues when activation_params decides to promote
-    mem_req_queue #(.QUEUE_SIZE(16)) activation_queue (
-        .clk_in(clk_in),
-        .rst_in(rst_in),
-        .enqueue_in(precharge_params.promote),
-        .transfer_ready(activation_params.transfer_ready),
-        .req_in(precharge_params.pending_top_out),
-        .cycle_count(cycle_counter),
-        .ready_top_out(activation_params.ready_top_out),
-        .pending_top_out(ready_params.pending_top_out),
-        .ready_empty(activation_params.ready_empty),
-        .pending_empty(activation_params.pending_empty),
-        .promote(activation_params.promote)
-    );
+            // Activation Queue
+            mem_req_queue #(.QUEUE_SIZE(16)) activation_queue (
+                .clk_in(clk_in),
+                .rst_in(rst_in),
+                .enqueue_in(precharge_params[i].promote),
+                .transfer_ready(activation_params[i].transfer_ready),
+                .req_in(activation_params[i].incoming ? activation_params[i].req_in : precharge_params[i].pending_top_out),
+                .cycle_count(cycle_counter),
+                .promote_ready(activation_params[i].pending_top_out.write ? !write_params[i].incoming : !read_params[i].incoming),
+                .ready_top_out(activation_params[i].ready_top_out),
+                .pending_top_out(ready_params[i].pending_top_out),
+                .ready_empty(activation_params[i].ready_empty),
+                .pending_empty(activation_params[i].pending_empty),
+                .promote(activation_params[i].promote)
+            );
 
+            // Transaction Scheduler Queue
+            mem_req_queue #(QUEUE_SIZE) trans_scheduler_queue(
+                .clk_in(clk_in), 
+                .rst_in(rst_in), 
+                .enqueue_in(trans_params[i].enqueue_in), 
+                .dequeue_in(trans_params[i].dequeue_in), 
+                .req_in(trans_params[i].req_in), 
+                .cycle_count(cycle_count), 
+                .req_out(trans_params[i].req_out), 
+                .empty(trans_params[i].empty), 
+                .full(trans_params[i].full)
+            );
+        end
+    endgenerate
 
     always_ff @(posedge clk_in or posedge rst_in) begin
         if (rst_in) begin
@@ -500,11 +534,13 @@ module request_scheduler #(
 
     always_comb begin
         if (valid_in) begin
-            if (precharge_queue.size >= QUEUE_SIZE) begin
+            if (precharge_params.full) begin
                 cmd_out <= 3'b100; // block
             end else begin
+                // Access enter queue algorithm. TODO implement forwarding write data to request if its a read, or if theres a corresponding burst, append to burst
+                memory_request_t incoming_req;
                 init_mem_req(
-                    precharge_params.req_in,
+                    incoming_req,
                     bank_group_in,
                     bank_in,
                     row,
@@ -514,19 +550,48 @@ module request_scheduler #(
                     write_in,
                     3'b000
                 );
+                bank_state_params.request_data = bank_idx;
                 if (bank_state_params.ready_to_access[bank_idx]) begin
                     // precharged but not activated
-                    // TODO we need to update all the queues to take in a special req_in. if its a 1st level add (here) prioritize that over the promotion. 
-                    activation_params.enqueue = 1'b1;
-                end else if (bank_state_params.active_bank[bank_idx]) begin
+                    // if its an incoming request prioritize that over the promotion. 
+                    activation_params[bank_idx].enqueue = 1'b1;
+                    activation_params[bank_idx].incoming = 1'b1;
+                    activation_params[bank_idx].req_in = incoming_req;
+                end else if (bank_state_params.active_bank[bank_idx] & bank_state_params.active_row_out == row) begin
                     // active bank, put it in its respective queue
                     if (write_in) begin
-                        write_params.enqueue = 1'b1;
+                        write_params[bank_idx].enqueue = 1'b1;
+                        write_params[bank_idx].incoming = 1'b1;
+                        write_params[bank_idx].req_in = incoming_req;
                     end else begin
-                        read_params.enqueue = 1'b1;
+                        read_params[bank_idx].enqueue = 1'b1;
+                        read_params[bank_idx].incoming = 1'b1;
+                        read_params[bank_idx].req_in = incoming_req;
                     end
                 end else begin
-                    precharge_params.enqueue = 1'b1;
+                    precharge_params[bank_idx].enqueue = 1'b1;
+                    precharge_params[bank_idx].req_in = incoming_req;
+                end
+                // now we need to decide the out_command
+                mem_request_t params [4][BANKS] = {read_params, write_params, activation_params, precharge_params};
+                logic [2:0] cmds [4] = {3'b000, 3'b001, 3'b010, 3'b011}; // Read, Write, Activate, Precharge
+                logic done;
+                for (int p = 0; p < 4 && !done; p++) begin
+                    for (int i = 0; i < BANKS; i++) begin
+                        bank_state_params.request_data = i;
+                        if (!params[p][i].empty && params[p][i].ready_top_out.row_out == bank_state_params.active_row_out) begin
+                            mem_request_t top = params[p][i].ready_top_out;
+                            done = 1'b1;
+                            valid_out = 1'b1;
+                            cmd = cmds[p];
+                            row_out = top.row;
+                            col_out = top.col;
+                            bank_out = top.bank;
+                            bank_group_out = top.bank_group;
+                            params[p][i].transfer_ready = 1'b1;
+                            break;
+                        end
+                    end
                 end
             end
         end
