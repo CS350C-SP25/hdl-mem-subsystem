@@ -577,3 +577,80 @@ module address_parser #(
 
 
 endmodule
+
+
+// CLB to assemble commands from scheduler for DIMM
+module command_clb #(
+    parameter int ROW_BITS = 8,  // log2(ROWS)
+    parameter int COL_BITS = 4,  // log2(COLS)
+) (
+
+    // Inputs from request_scheduler
+    input logic [$clog2(BANK_GROUPS)-1:0] bank_group_in,
+    input logic [$clog2(BANKS_PER_GROUP)-1:0] bank_in,
+    input logic [ROW_BITS-1:0] row_in,
+    input logic [COL_BITS-1:0] col_in,
+    input logic [63:0] val_in,
+    input logic [2:0] cmd_in, // 0 is read, 1 is write, 2 is activate, 3 is precharge; if valid_out is 0 then block
+    input logic valid_in,
+
+    output logic act_out,
+    output logic [16:0] dram_addr_out,  // row/col or special bits.
+    output logic [$clog2(BANK_GROUPS)-1:0] bank_group_out,
+    output logic [$clog2(BANKS_PER_GROUP)-1:0] bank_out,
+
+);
+
+    // Commands enum
+    typedef enum logic {
+        READ = 3'b000,
+        WRITE = 3'b001,
+        ACTIVATE = 3'b010,
+        PRECHARGE = 3'b011
+    } commands;
+
+    logic ras, cas, we;
+    logic [16:0] dram_addr_temp;
+
+    always_comb begin
+        dram_addr_temp[ROW_BITS-1:COL_BITS] = row_in[ROW_BITS-1:COL_BITS];
+
+        // If row activation
+        if (cmd_in == ACTIVATE) begin
+            act_out = '0; // Deactivate command pin
+
+            // Left-pad row address with 0's if row width is smaller than address width
+            dram_addr_out = {{(17-ROW_BITS){1'b0}}, row_in};
+
+        // If command
+        end else begin
+            act_out = '1; // Activate command pin
+
+            // Set command pins
+            case (cmd_in)
+                READ:
+                    ras = '1;
+                    cas = '0;
+                    we = '1;
+                WRITE:
+                    ras = '1;
+                    cas = '0;
+                    we = '0;
+                PRECHARGE:
+                    ras = '0;
+                    cas = '1;
+                    we = '0;
+            // TODO: add valid check for BLOCK
+            endcase
+            // A10 is unused for commands, but could be used to indicate auto-precharge
+            // Set command pins, set unused bits to 0
+            dram_addr_out = {ras, cas, we, {(17-3-COL_BITS){1'b0}}, col_in};
+        end
+
+        bank_group_out = bank_group_in;
+        bank_out = bank_in;
+
+    end
+
+endmodule
+
