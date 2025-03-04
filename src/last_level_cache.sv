@@ -232,7 +232,8 @@ module request_scheduler #(
     output logic [$clog2(BANKS_PER_GROUP)-1:0] bank_out,
     output logic [ROW_BITS-1:0] row_out,
     output logic [COL_BITS-1:0] col_out,
-    output logic [2:0] cmd_out, // 0 is read, 1 is write, 2 is activate, 3 is precharge, 4 is block
+    output logic [63:0] val_out,
+    output logic [2:0] cmd_out, // 0 is read, 1 is write, 2 is activate, 3 is precharge; if valid_out is 0 then block
     output logic valid_out,
 );
     typedef struct packed {
@@ -586,12 +587,18 @@ module request_scheduler #(
                             cmd = cmds[p];
                             row_out = top.row;
                             col_out = top.col;
+                            if (p == 1) begin
+                                val_out = top.val_in;
+                            end
                             bank_out = top.bank;
                             bank_group_out = top.bank_group;
                             params[p][i].transfer_ready = 1'b1;
                             break;
                         end
                     end
+                end
+                if (!done) begin
+                    valid_out = 0'b1;
                 end
             end
         end
