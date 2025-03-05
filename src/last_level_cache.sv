@@ -632,46 +632,55 @@ module request_scheduler #(
 endmodule: request_scheduler
 
 module address_parser #(
-    parameter int A = 8,
-    parameter int B = 64,
-    parameter int C = 16384,
-    parameter int BUS_WIDTH = 16,  // bus width per chip
-    parameter int BANK_GROUPS = 8,
-    parameter int BANKS_PER_GROUP = 8,       // banks per group
-    parameter int ROW_BITS = 8,    // bits to address rows
-    parameter int COL_BITS = 4     // bits to address columns
+    parameter int ROW_BITS = 8,  // log2(ROWS)
+    parameter int COL_BITS = 4,  // log2(COLS)
+    parameter int PADDR_BITS = 19
 ) (
-    input logic [63:0]                          l1d_addr_in,
-    output logic [$clog2(BANK_GROUPS)]          bank_group_out,
-    output logic [$clog2(BANKS_PER_GROUP)-1:0]  bank_out,
-    output logic [ROW_BITS-1:0]                 row_out,
-    output logic [COL_BITS-1:0]                 col_out
+    input  logic [PADDR_BITS-1:0] mem_bus_addr_in,
+    output  logic [16:0] addr_out,  // [row][col]. Needs two cycles.
+    output logic [1:0] bg_out,     // Bank group id
+    output logic [1:0] ba_out      // Bank id
 );
 
-    // Associativity: 8, block size = 16, capacity = 16384
-    localparam int num_sets = C / (A * B);
-    // Block offset =  bits
-    localparam int block_offset_bits = $clog2(B);
-    localparam int set_index_bits = $clog2(num_sets);
-    localparam int tag_bits = 64 - block_offset_bits - set_index_bits;
+    localparam int buffer_bits = 17 - ROW_BITS - COL_BITS; // Assumed (row_bits + col_bits) <= 17. 
 
-    localparam int BANK_BITS = $clog2(BANKS);
+    // Address mapping strategy:
+    // Lower bits: Column address (for row buffer locality)
+    // Middle bits: Bank/Bank Group (for parallelism)
+    // Upper bits: Row address
 
-    // Need to reevaluate after the design review. Current assumptions:
-    // The bank, row, and column address are stored at the lower bits of the address in, leaving the remaining more significant bits for other info
+    
+    logic [ROW_BITS-1:0] row;
+    logic [COL_BITS-1:0] col;
 
-    // Proposed mapping for now: 
-    /*
-    Cache:  [    52-bit Tag    ][6-bit Set Index][  6-bit Block Offset  ]
-    DDR4:   [Unused][Row][BankGroup][  Bank  ][    Column    ]
-                        [  44  ][ 8 ][    3    ][   6   ][      4       ]
+    always_comb begin
+        // Extract column bits (lowest order)
+        col = mem_bus_addr_in[COL_BITS-1:0];
+        
+        // It is assumed that the # of bank groups AND # of banks
+        //  per group are 4, since they each take 2 bits to index into
+        ba_out = mem_bus_addr_in[COL_BITS+1:COL_BITS];
+        bg_out = mem_bus_addr_in[COL_BITS+3:COL_BITS+2];
+        
+        // Row address takes the remaining upper bits
+        // Note: We might not use all available row bits
+        row = mem_bus_addr_in[COL_BITS + 4 + ROW_BITS - 1:COL_BITS+4];
+        
+        addr_out = {{(buffer_bits){1'b0}}, row, col}; // most significant bits ignored by the DRAM row
+                                                    //  address selector if row_bits + col_bits < 17
 
-    */
+    end
 
-    assign bank_out = address_in[BANK_BITS + ROW_BITS + COL_BITS - 1: ROW_BITS + COL_BITS];
-    assign row_out = address_in[ROW_POS + COL_BITS: COL_BITS];
-    assign column_out = address_in[COL_POS: 0];
+    // Assertions for parameter checking
+    initial begin
+        // Verify that we have enough input address bits
+        assert (PADDR_BITS > (COL_BITS + 2 + 2))
+        else $error("Input address bits insufficient for minimum addressing");
 
+        assert (ROW_BITS + COL_BITS <= 17)
+        else $error("Row and column bits are too much for the 17-bit address out");
+    
+    end
 
 endmodule
 
