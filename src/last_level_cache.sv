@@ -920,7 +920,7 @@ module command_clb #(
     input logic [COL_BITS-1:0] col_in,
     input logic [2:0] cmd_in, // 0 is read, 1 is write, 2 is activate, 3 is precharge; if valid_out is 0 then block
     output logic act_out, // Command bit
-    output logic [16:0] dram_addr_out,  // row/col or special bits.
+    output logic [16:0] dram_addr_out  // row/col or special bits.
 
 );
 
