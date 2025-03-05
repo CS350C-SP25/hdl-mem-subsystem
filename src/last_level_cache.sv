@@ -678,30 +678,20 @@ endmodule
 
 // CLB to assemble commands from scheduler for DIMM
 module command_clb #(
-    parameter int BANK_GROUPS = 8,
-    parameter int BANKS_PER_GROUP = 8,       // banks per group
     parameter int ROW_BITS = 8,    // bits to address rows
     parameter int COL_BITS = 4     // bits to address columns
 ) (
-
     // Inputs from request_scheduler
-    input logic [$clog2(BANK_GROUPS)-1:0] bank_group_in,
-    input logic [$clog2(BANKS_PER_GROUP)-1:0] bank_in,
     input logic [ROW_BITS-1:0] row_in,
     input logic [COL_BITS-1:0] col_in,
-    input logic [63:0] val_in,
     input logic [2:0] cmd_in, // 0 is read, 1 is write, 2 is activate, 3 is precharge; if valid_out is 0 then block
-    input logic valid_in,
-
-    output logic act_out,
+    output logic act_out, // Command bit
     output logic [16:0] dram_addr_out,  // row/col or special bits.
-    output logic [$clog2(BANK_GROUPS)-1:0] bank_group_out,
-    output logic [$clog2(BANKS_PER_GROUP)-1:0] bank_out
 
 );
 
     // Commands enum
-  typedef enum logic[2:0] {
+    typedef enum logic[2:0] {
         READ = 3'b000,
         WRITE = 3'b001,
         ACTIVATE = 3'b010,
@@ -748,15 +738,11 @@ module command_clb #(
                   cas = 'x;
                   we = 'x;
                 end
-            // TODO: add valid check for BLOCK
             endcase
             // A10 is unused for commands, but could be used to indicate auto-precharge
             // Set command pins, set unused bits to 0
             dram_addr_out = {ras, cas, we, {(17-3-COL_BITS){1'b0}}, col_in};
         end
-
-        bank_group_out = bank_group_in;
-        bank_out = bank_in;
 
     end
 
