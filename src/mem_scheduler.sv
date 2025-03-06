@@ -28,6 +28,7 @@ module mem_req_queue #(
             size <= next_size;
             head <= next_head;
         end
+        // $display("Size %d", size);
     end
 
     always_comb begin
@@ -234,13 +235,16 @@ module request_scheduler #(
         logic dequeue_in;
         logic transfer_ready; // command is available 
         mem_request_t req_in;
+        logic incoming; // if theres an incoming request into the scheduler and it needs to be placed in the queue, it takes priority over a promotion
+    } mem_queue_params_in_t;
+
+    typedef struct packed {
         mem_request_t ready_top_out;
         mem_request_t pending_top_out;
         logic ready_empty_out; // if empty then top doesnt matter
         logic pending_empty_out;
         logic promote;
-        logic incoming; // if theres an incoming request into the scheduler and it needs to be placed in the queue, it takes priority over a promotion
-    } mem_queue_params;
+    } mem_queue_params_out_t;
 
     typedef struct packed {
         logic [ROW_BITS-1:0] row_out;
@@ -283,7 +287,8 @@ module request_scheduler #(
     endfunction
     function automatic void process_bank_commands(
         input int unsigned p,
-        ref mem_queue_params [BANKS-1:0] params,
+        ref mem_queue_params_in_t [BANKS-1:0] params_in,
+        mem_queue_params_out_t [BANKS-1:0] params_out, // pass by value
         ref bank_state_params_in_t bank_state_params_in,
         ref bank_state_params_out_t bank_state_params_out,
         input logic [2:0] cmds[4],
@@ -300,12 +305,12 @@ module request_scheduler #(
         valid_out_t = 1'b0;
         
         for (int i = 0; i < BANKS; i++) begin
-            if (!params[i].ready_empty_out && 
+            if (!params_out[i].ready_empty_out && 
                 !bank_state_params_out.blocked[i[$clog2(BANKS)-1:0]] && 
                 (p == 2 || p == 3 || 
-                params[i].ready_top_out.row == bank_state_params_out.active_row_out[i[$clog2(BANKS)-1:0]])) begin
+                params_out[i].ready_top_out.row == bank_state_params_out.active_row_out[i[$clog2(BANKS)-1:0]])) begin
                 
-                mem_request_t top = params[i].ready_top_out;
+                mem_request_t top = params_out[i].ready_top_out;
                 $display("considering cmd %d for p %d and bank idx %d", cmds[p], p, i);
                 
                 done = 1'b1;
@@ -332,21 +337,20 @@ module request_scheduler #(
                 bank_out_t = top.bank;
                 bank_group_out_t = top.bank_group;
                 
-                params[i].transfer_ready = 1'b1;
+                params_in[i].transfer_ready = 1'b1;
                 break;
             end
         end
     endfunction
 
     function automatic void reset_mem_queue_params (
-        output mem_queue_params [BANKS-1:0] params
+        output mem_queue_params_in_t [BANKS-1:0] params
     );
         for (int i = 0; i < BANKS; i++) begin
             params[i].enqueue_in = 'b0;
             params[i].dequeue_in = 'b0;
             params[i].transfer_ready = 'b0;
             params[i].req_in = incoming_req;
-            params[i].promote = 'b0;
             params[i].incoming = 'b0;
         end
     endfunction
@@ -356,11 +360,17 @@ module request_scheduler #(
     bank_state_params_in_t bank_state_params_in;
     bank_state_params_out_t bank_state_params_out;
     bank_state_params_out_t bank_state;
-    mem_queue_params [BANKS-1:0] read_params;
-    mem_queue_params [BANKS-1:0] write_params;
-    mem_queue_params [BANKS-1:0] precharge_params;
-    mem_queue_params [BANKS-1:0] activation_params;
-    mem_queue_params [BANKS-1:0] params [3:0]; 
+
+    mem_queue_params_in_t [BANKS-1:0] read_params_in;
+    mem_queue_params_in_t [BANKS-1:0] write_params_in;
+    mem_queue_params_in_t [BANKS-1:0] precharge_params_in;
+    mem_queue_params_in_t [BANKS-1:0] activation_params_in;
+
+    mem_queue_params_out_t [BANKS-1:0] read_params_out;
+    mem_queue_params_out_t [BANKS-1:0] write_params_out;
+    mem_queue_params_out_t [BANKS-1:0] precharge_params_out;
+    mem_queue_params_out_t [BANKS-1:0] activation_params_out;
+
     logic [2:0] cmds [4] = {3'b000, 3'b001, 3'b010, 3'b011}; // Read, Write, Activate, Precharge
     logic done;
     mem_request_t incoming_req;
@@ -401,64 +411,64 @@ module request_scheduler #(
             mem_cmd_queue #(.QUEUE_SIZE(16), .LATENCY(1), .mem_request_t(mem_request_t)) read_queue (
                 .clk_in(clk_in),
                 .rst_in(rst_in),
-                .enqueue_in(read_params[i].incoming || (activation_params[i].promote & !activation_params[i].pending_top_out.write)),
-                .transfer_ready(read_params[i].transfer_ready),
-                .req_in(read_params[i].incoming ? read_params[i].req_in : activation_params[i].pending_top_out),
+                .enqueue_in(read_params_in[i].incoming || (activation_params_out[i].promote & !activation_params_out[i].pending_top_out.write)),
+                .transfer_ready(read_params_in[i].transfer_ready),
+                .req_in(read_params_in[i].incoming ? read_params_in[i].req_in : activation_params_out[i].pending_top_out),
                 .cycle_count(cycle_counter),
                 .promote_ready(1'b1),
-                .ready_top_out(read_params[i].ready_top_out),
-                .pending_top_out(read_params[i].pending_top_out),
-                .ready_empty_out(read_params[i].ready_empty_out),
-                .pending_empty_out(read_params[i].pending_empty_out),
-                .promote(read_params[i].promote)
+                .ready_top_out(read_params_out[i].ready_top_out),
+                .pending_top_out(read_params_out[i].pending_top_out),
+                .ready_empty_out(read_params_out[i].ready_empty_out),
+                .pending_empty_out(read_params_out[i].pending_empty_out),
+                .promote(read_params_out[i].promote)
             );
 
             // Write Queue
             mem_cmd_queue #(.QUEUE_SIZE(16), .LATENCY(1), .mem_request_t(mem_request_t)) write_queue (
                 .clk_in(clk_in),
                 .rst_in(rst_in),
-                .enqueue_in(write_params[i].incoming || (activation_params[i].promote & activation_params[i].pending_top_out.write)),
-                .transfer_ready(write_params[i].transfer_ready),
-                .req_in(write_params[i].incoming ? write_params[i].req_in : activation_params[i].pending_top_out),
+                .enqueue_in(write_params_in[i].incoming || (activation_params_out[i].promote & activation_params_out[i].pending_top_out.write)),
+                .transfer_ready(write_params_in[i].transfer_ready),
+                .req_in(write_params_in[i].incoming ? write_params_in[i].req_in : activation_params_out[i].pending_top_out),
                 .cycle_count(cycle_counter),
                 .promote_ready(1'b1),
-                .ready_top_out(write_params[i].ready_top_out),
-                .pending_top_out(write_params[i].pending_top_out),
-                .ready_empty_out(write_params[i].ready_empty_out),
-                .pending_empty_out(write_params[i].pending_empty_out),
-                .promote(write_params[i].promote)
+                .ready_top_out(write_params_out[i].ready_top_out),
+                .pending_top_out(write_params_out[i].pending_top_out),
+                .ready_empty_out(write_params_out[i].ready_empty_out),
+                .pending_empty_out(write_params_out[i].pending_empty_out),
+                .promote(write_params_out[i].promote)
             );
 
             // Precharge Queue
             mem_cmd_queue #(.QUEUE_SIZE(16), .LATENCY(PRECHARGE_LATENCY), .mem_request_t(mem_request_t)) precharge_queue (
                 .clk_in(clk_in),
                 .rst_in(rst_in),
-                .enqueue_in(precharge_params[i].enqueue_in),
-                .transfer_ready(precharge_params[i].transfer_ready),
-                .req_in(precharge_params[i].req_in),
+                .enqueue_in(precharge_params_in[i].enqueue_in),
+                .transfer_ready(precharge_params_in[i].transfer_ready),
+                .req_in(precharge_params_in[i].req_in),
                 .cycle_count(cycle_counter),
-                .promote_ready(!activation_params[i].incoming),
-                .ready_top_out(precharge_params[i].ready_top_out),
-                .pending_top_out(precharge_params[i].pending_top_out),
-                .ready_empty_out(precharge_params[i].ready_empty_out),
-                .pending_empty_out(precharge_params[i].pending_empty_out),
-                .promote(precharge_params[i].promote)
+                .promote_ready(!activation_params_in[i].incoming),
+                .ready_top_out(precharge_params_out[i].ready_top_out),
+                .pending_top_out(precharge_params_out[i].pending_top_out),
+                .ready_empty_out(precharge_params_out[i].ready_empty_out),
+                .pending_empty_out(precharge_params_out[i].pending_empty_out),
+                .promote(precharge_params_out[i].promote)
             );
 
             // Activation Queue
             mem_cmd_queue #(.QUEUE_SIZE(16), .LATENCY(ACTIVATION_LATENCY), .mem_request_t(mem_request_t)) activation_queue (
                 .clk_in(clk_in),
                 .rst_in(rst_in),
-                .enqueue_in(activation_params[i].incoming || precharge_params[i].promote),
-                .transfer_ready(activation_params[i].transfer_ready),
-                .req_in(activation_params[i].incoming ? activation_params[i].req_in : precharge_params[i].pending_top_out),
+                .enqueue_in(activation_params_in[i].incoming || precharge_params_out[i].promote),
+                .transfer_ready(activation_params_in[i].transfer_ready),
+                .req_in(activation_params_in[i].incoming ? activation_params_in[i].req_in : precharge_params_out[i].pending_top_out),
                 .cycle_count(cycle_counter),
-                .promote_ready(activation_params[i].pending_top_out.write ? !write_params[i].incoming : !read_params[i].incoming),
-                .ready_top_out(activation_params[i].ready_top_out),
-                .pending_top_out(activation_params[i].pending_top_out),
-                .ready_empty_out(activation_params[i].ready_empty_out),
-                .pending_empty_out(activation_params[i].pending_empty_out),
-                .promote(activation_params[i].promote)
+                .promote_ready(activation_params_out[i].pending_top_out.write ? !write_params_in[i].incoming : !read_params_in[i].incoming),
+                .ready_top_out(activation_params_out[i].ready_top_out),
+                .pending_top_out(activation_params_out[i].pending_top_out),
+                .ready_empty_out(activation_params_out[i].ready_empty_out),
+                .pending_empty_out(activation_params_out[i].pending_empty_out),
+                .promote(activation_params_out[i].promote)
             );
         end
     endgenerate
@@ -474,6 +484,7 @@ module request_scheduler #(
             val_out <= '0;
             bank_out <= '0;
             bank_group_out <= '0;
+            $display("Precharge Queue 6 empty: %b", precharge_params_out[6].ready_empty_out);
         end else begin
             cycle_counter <= cycle_counter + 1;
             bank_group_out <= bank_group_out_t;
@@ -483,6 +494,7 @@ module request_scheduler #(
             val_out <= val_out_t;
             cmd_out <= cmd_out_t;
             valid_out <= valid_out_t;
+            $display("Precharge Queue 6 empty: %b", precharge_params_out[6].ready_empty_out);
         end
     end
 
@@ -524,11 +536,11 @@ module request_scheduler #(
             3'b000
         );
         bank_state_params_in.row_address = 'b0;
-        reset_mem_queue_params(read_params);
-        reset_mem_queue_params(write_params);
-        reset_mem_queue_params(precharge_params);
-        reset_mem_queue_params(activation_params);
-
+        reset_mem_queue_params(read_params_in);
+        reset_mem_queue_params(write_params_in);
+        reset_mem_queue_params(precharge_params_in);
+        reset_mem_queue_params(activation_params_in);
+        
         if (valid_in) begin
             // Access enter queue algorithm
             
@@ -536,26 +548,26 @@ module request_scheduler #(
             if (bank_state_params_out.ready_to_access[bank_idx]) begin
                 // Precharged but not activated
                 $display("adding to activation queue idx %d\n", bank_idx);
-                activation_params[bank_idx].enqueue_in = 1'b1;
-                activation_params[bank_idx].incoming = 1'b1;
-                activation_params[bank_idx].req_in = incoming_req;
+                activation_params_in[bank_idx].enqueue_in = 1'b1;
+                activation_params_in[bank_idx].incoming = 1'b1;
+                activation_params_in[bank_idx].req_in = incoming_req;
             end else if (bank_state_params_out.active_bank[bank_idx] && 
                         bank_state_params_out.active_row_out[bank_idx] == row_in) begin
                 $display("adding to r/w queue\n");
                 // Active bank, put in respective queue
                 if (write_in) begin
-                    write_params[bank_idx].enqueue_in = 1'b1;
-                    write_params[bank_idx].incoming = 1'b1;
-                    write_params[bank_idx].req_in = incoming_req;
+                    write_params_in[bank_idx].enqueue_in = 1'b1;
+                    write_params_in[bank_idx].incoming = 1'b1;
+                    write_params_in[bank_idx].req_in = incoming_req;
                 end else begin
-                    read_params[bank_idx].enqueue_in = 1'b1;
-                    read_params[bank_idx].incoming = 1'b1;
-                    read_params[bank_idx].req_in = incoming_req;
+                    read_params_in[bank_idx].enqueue_in = 1'b1;
+                    read_params_in[bank_idx].incoming = 1'b1;
+                    read_params_in[bank_idx].req_in = incoming_req;
                 end
             end else begin
-                $display("adding to precharge queue\n");
-                precharge_params[bank_idx].enqueue_in = 1'b1;
-                precharge_params[bank_idx].req_in = incoming_req;
+                $display("adding to precharge queue %d\n", incoming_req.bank_group * incoming_req.bank);
+                precharge_params_in[bank_idx].enqueue_in = 1'b1;
+                precharge_params_in[bank_idx].req_in = incoming_req;
             end
         end
         if (cmd_ready) begin
@@ -563,7 +575,8 @@ module request_scheduler #(
             
             process_bank_commands(
                 0,
-                read_params,
+                read_params_in,
+                read_params_out,
                 bank_state_params_in,
                 bank_state,
                 cmds,
@@ -578,7 +591,8 @@ module request_scheduler #(
             );
             process_bank_commands(
                 0,
-                write_params,
+                write_params_in,
+                write_params_out,
                 bank_state_params_in,
                 bank_state,
                 cmds,
@@ -593,7 +607,8 @@ module request_scheduler #(
             );
             process_bank_commands(
                 0,
-                activation_params,
+                activation_params_in,
+                activation_params_out,
                 bank_state_params_in,
                 bank_state,
                 cmds,
@@ -608,7 +623,8 @@ module request_scheduler #(
             );
             process_bank_commands(
                 0,
-                precharge_params,
+                precharge_params_in,
+                precharge_params_out,
                 bank_state_params_in,
                 bank_state,
                 cmds,

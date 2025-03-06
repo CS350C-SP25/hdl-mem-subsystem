@@ -79,6 +79,7 @@ module request_scheduler_tb;
         #10;
         rst_in = 0;
         #10;
+        #10;
 
         // Test Case 1: Write Request
         $display("Test Case 1: Write Request...");
