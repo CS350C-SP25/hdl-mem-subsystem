@@ -54,6 +54,229 @@ module last_level_cache #(
 );
     // You may reuse the cache module that the L1D team will work on
     // Your main task will be talking to the DIMM on an eviction or flush.
+    
+    //--------------------------------------------------------------------------
+    // 1) Connect to an internal "cache" submodule to store lines & check hits.
+    //    We assume it can tell us if there's a hit, and provide data.
+    //--------------------------------------------------------------------------
+    logic llc_valid_in, llc_ready_in, llc_valid_out, llc_ready_out;
+    logic llc_hit_out;
+    logic [PADDR_BITS-1:0] llc_addr;
+    logic [63:0] llc_data_out;
+
+    cache #(
+        .A(3),      // Example ways, can differ
+        .B(64),     // Line size
+        .C(16384),  // Capacity
+        .W(64)      // Data width
+    ) llc_data_array (
+        .rst_N_in   (rst_N_in),
+        .clk_in     (clk_in),
+        .cs_in      (cs_in),          
+        .valid_in   (llc_valid_in),
+        .ready_in   (llc_ready_in),
+        .in_addr    (llc_addr),
+        .valid_out  (llc_valid_out),
+        .ready_out  (llc_ready_out),
+        .hit_out    (llc_hit_out),
+        .data_out   (llc_data_out)
+    );
+
+    //--------------------------------------------------------------------------
+    // 2) Internal State + Registers
+    //--------------------------------------------------------------------------
+    typedef enum logic [3:0] {
+        IDLE,
+        CHECK_HIT,
+        MISS_DRAM_READ,
+        WAIT_DRAM_READ,
+        FILL_LINE,
+        DRAM_WRITE,
+        WAIT_DRAM_WRITE,
+        RESPOND_L1,
+        FLUSH
+    } llc_state_t;
+
+    llc_state_t state, next_state;
+
+    logic [PADDR_BITS-1:0] req_addr_reg;
+    logic [63:0]           req_data_reg;
+    logic                  req_we_reg;
+
+    // Memory bus data direction: 1 => drive out, 0 => read in
+    logic [63:0] mem_data_out;
+    logic        mem_data_dir; 
+
+    //--------------------------------------------------------------------------
+    // 3) Tri-state for mem_bus_value_io
+    //--------------------------------------------------------------------------
+    assign mem_bus_value_io = (mem_data_dir) ? mem_data_out : 64'bz;
+
+    //--------------------------------------------------------------------------
+    // 4) State Register
+    //--------------------------------------------------------------------------
+    always_ff @(posedge clk_in or negedge rst_N_in) begin
+        if (!rst_N_in) begin
+            state <= IDLE;
+        end else begin
+            state <= next_state;
+        end
+    end
+
+    //--------------------------------------------------------------------------
+    // 5) Next-State Logic + Output Control
+    //--------------------------------------------------------------------------
+    always_comb begin
+        // Defaults
+        next_state         = state;
+
+        hc_valid_out       = 1'b0;
+        hc_ready_out       = 1'b0;
+        hc_addr_out        = req_addr_reg;
+        hc_value_out       = llc_data_out;  // By default, pass LLC data on read
+
+        llc_valid_in       = 1'b0;
+        llc_ready_in       = 1'b1;
+        llc_addr           = req_addr_reg;
+
+        mem_bus_valid_out  = 1'b0;  // not driving memory by default
+        mem_bus_addr_out   = req_addr_reg;
+        mem_bus_ready_out  = 1'b1;  // always can accept data in this example
+        mem_data_dir       = 1'b0;  // 0 => input from DRAM
+        mem_data_out       = req_data_reg;
+
+        case (state)
+
+            //--------------------------------------------------
+            IDLE: begin
+                hc_ready_out = 1'b1;  // we can accept a new request
+
+                if (flush_in) begin
+                    // trivial in write-through: no dirty lines to write back
+                    next_state = FLUSH;
+                end
+                else if (hc_valid_in && cs_in) begin
+                    // L1 has a request
+                    next_state = CHECK_HIT;
+                end
+            end
+
+            //--------------------------------------------------
+            CHECK_HIT: begin
+                // Provide the address to the LLC submodule for a tag check
+                llc_valid_in = 1'b1;
+                llc_addr     = req_addr_reg;
+
+                // Suppose llc_valid_out, llc_hit_out are valid in this cycle
+                if (llc_valid_out) begin
+                    if (llc_hit_out) begin
+                        // If we have a hit:
+                        if (req_we_reg) begin
+                            // It's a write => immediately push new data to DRAM
+                            // (Write-through)
+                            next_state = DRAM_WRITE;
+                        end else begin
+                            // It's a read => just return data from the LLC
+                            next_state = RESPOND_L1;
+                        end
+                    end else begin
+                        // Miss scenario
+                        if (req_we_reg) begin
+                            // NO-WRITE-ALLOCATE => If this is a write miss, 
+                            // skip fetching the line from DRAM. 
+                            // Write directly to DRAM, do NOT update LLC
+                            next_state = DRAM_WRITE;
+                        end else begin
+                            // If read miss, do normal fetch
+                            next_state = MISS_DRAM_READ;
+                        end
+                    end
+                end
+            end
+
+            //--------------------------------------------------
+            MISS_DRAM_READ: begin
+                // Issue read request to DRAM
+                mem_bus_valid_out = 1'b1;  // request DRAM read
+                next_state        = WAIT_DRAM_READ;
+            end
+
+            //--------------------------------------------------
+            WAIT_DRAM_READ: begin
+                // Wait for DRAM to provide data (mem_bus_valid_in=1)
+                if (mem_bus_valid_in) begin
+                    next_state = FILL_LINE;
+                end
+            end
+
+            //--------------------------------------------------
+            FILL_LINE: begin
+                // Put newly fetched data into the LLC submodule
+                // In practice, you'd do something like:
+                //  llc_valid_in = 1'b1;
+                //  llc_addr     = req_addr_reg;
+                //  (store mem_bus_value_io in the line)
+                next_state = RESPOND_L1;
+            end
+
+            //--------------------------------------------------
+            DRAM_WRITE: begin
+                // Drive the bus with the data we want to store
+                mem_bus_valid_out = 1'b1;
+                mem_data_dir      = 1'b1;  // drive the bus with req_data_reg
+                // If it's a write from a miss (no-write-allocate),
+                // we do NOT fill the LLC with the data. 
+                next_state        = WAIT_DRAM_WRITE;
+            end
+
+            //--------------------------------------------------
+            WAIT_DRAM_WRITE: begin
+                // Wait for DRAM to accept the write (mem_bus_valid_in=1 confirms)
+                if (mem_bus_valid_in) begin
+                    // Once done, if it was a write miss, we skip updating the LLC
+                    next_state = RESPOND_L1;
+                end
+            end
+
+            //--------------------------------------------------
+            RESPOND_L1: begin
+                // Provide data (or acknowledgment) to the higher-level cache
+                // if it was a read, we have data from the LLC
+                // if it was a write, we can just provide an ack
+                hc_valid_out = 1'b1;
+                if (hc_ready_in) begin
+                    next_state = IDLE;
+                end
+            end
+
+            //--------------------------------------------------
+            FLUSH: begin
+                // In a write-through design, flush is trivial because no dirty lines exist
+                next_state = IDLE;
+            end
+
+            default: next_state = IDLE;
+        endcase
+    end
+
+    //--------------------------------------------------------------------------
+    // 6) Capture the L1 request in IDLE->CHECK_HIT
+    //--------------------------------------------------------------------------
+    always_ff @(posedge clk_in or negedge rst_N_in) begin
+        if (!rst_N_in) begin
+            req_addr_reg <= '0;
+            req_data_reg <= '0;
+            req_we_reg   <= 1'b0;
+        end
+        else begin
+            if (state == IDLE && hc_valid_in && cs_in) begin
+                req_addr_reg <= hc_addr_in;
+                req_data_reg <= hc_value_in;
+                req_we_reg   <= hc_we_in;
+            end
+        end
+    end
+
 endmodule : last_level_cache
 
 // A signal is expected to be sent to multiple DDR4 SDRAM chips at a time. You
@@ -632,74 +855,77 @@ module request_scheduler #(
 endmodule: request_scheduler
 
 module address_parser #(
-    parameter int A = 8,
-    parameter int B = 64,
-    parameter int C = 16384,
-    parameter int BUS_WIDTH = 16,  // bus width per chip
-    parameter int BANK_GROUPS = 8,
-    parameter int BANKS_PER_GROUP = 8,       // banks per group
-    parameter int ROW_BITS = 8,    // bits to address rows
-    parameter int COL_BITS = 4     // bits to address columns
+    parameter int ROW_BITS = 8,  // log2(ROWS)
+    parameter int COL_BITS = 4,  // log2(COLS)
+    parameter int PADDR_BITS = 19
 ) (
-    input logic [63:0]                          l1d_addr_in,
-    output logic [$clog2(BANK_GROUPS)]          bank_group_out,
-    output logic [$clog2(BANKS_PER_GROUP)-1:0]  bank_out,
-    output logic [ROW_BITS-1:0]                 row_out,
-    output logic [COL_BITS-1:0]                 col_out
+    input  logic [PADDR_BITS-1:0] mem_bus_addr_in,
+    output  logic [16:0] addr_out,  // [row][col]. Needs two cycles.
+    output logic [1:0] bg_out,     // Bank group id
+    output logic [1:0] ba_out      // Bank id
 );
 
-    // Associativity: 8, block size = 16, capacity = 16384
-    localparam int num_sets = C / (A * B);
-    // Block offset =  bits
-    localparam int block_offset_bits = $clog2(B);
-    localparam int set_index_bits = $clog2(num_sets);
-    localparam int tag_bits = 64 - block_offset_bits - set_index_bits;
+    localparam int buffer_bits = 17 - ROW_BITS - COL_BITS; // Assumed (row_bits + col_bits) <= 17. 
 
-    localparam int BANK_BITS = $clog2(BANKS);
+    // Address mapping strategy:
+    // Lower bits: Column address (for row buffer locality)
+    // Middle bits: Bank/Bank Group (for parallelism)
+    // Upper bits: Row address
+    // Any remaining bits are zeroed out. This is to preserve a one-to-one mapping of cache to DRAM and
+    // avoid the hassle of interweaving.
 
-    // Need to reevaluate after the design review. Current assumptions:
-    // The bank, row, and column address are stored at the lower bits of the address in, leaving the remaining more significant bits for other info
+    
+    logic [ROW_BITS-1:0] row;
+    logic [COL_BITS-1:0] col;
 
-    // Proposed mapping for now: 
-    /*
-    Cache:  [    52-bit Tag    ][6-bit Set Index][  6-bit Block Offset  ]
-    DDR4:   [Unused][Row][BankGroup][  Bank  ][    Column    ]
-                        [  44  ][ 8 ][    3    ][   6   ][      4       ]
+    always_comb begin
+        // Extract column bits (lowest order)
+        col = mem_bus_addr_in[COL_BITS-1:0];
+        
+        // It is assumed that the # of bank groups AND # of banks
+        //  per group are 4, since they each take 2 bits to index into
+        ba_out = mem_bus_addr_in[COL_BITS+1:COL_BITS];
+        bg_out = mem_bus_addr_in[COL_BITS+3:COL_BITS+2];
+        
+        // Row address takes the remaining upper bits
+        // Note: We might not use all available row bits
+        row = mem_bus_addr_in[COL_BITS + 4 + ROW_BITS - 1:COL_BITS+4];
+        
+        addr_out = {{(buffer_bits){1'b0}}, row, col}; // most significant bits ignored by the DRAM row
+                                                    //  address selector if row_bits + col_bits < 17
 
-    */
+    end
 
-    assign bank_out = address_in[BANK_BITS + ROW_BITS + COL_BITS - 1: ROW_BITS + COL_BITS];
-    assign row_out = address_in[ROW_POS + COL_BITS: COL_BITS];
-    assign column_out = address_in[COL_POS: 0];
+    // Assertions for parameter checking
+    initial begin
+        // Verify that we have enough input address bits
+        assert (PADDR_BITS > (COL_BITS + 2 + 2))
+        else $error("Input address bits insufficient for minimum addressing");
 
+        assert (ROW_BITS + COL_BITS <= 17)
+        else $error("Row and column bits are too much for the 17-bit address out");
+    
+    end
 
 endmodule
 
 
 // CLB to assemble commands from scheduler for DIMM
 module command_clb #(
-    parameter int ROW_BITS = 8,  // log2(ROWS)
-    parameter int COL_BITS = 4,  // log2(COLS)
+    parameter int ROW_BITS = 8,    // bits to address rows
+    parameter int COL_BITS = 4     // bits to address columns
 ) (
-
     // Inputs from request_scheduler
-    input logic [$clog2(BANK_GROUPS)-1:0] bank_group_in,
-    input logic [$clog2(BANKS_PER_GROUP)-1:0] bank_in,
     input logic [ROW_BITS-1:0] row_in,
     input logic [COL_BITS-1:0] col_in,
-    input logic [63:0] val_in,
     input logic [2:0] cmd_in, // 0 is read, 1 is write, 2 is activate, 3 is precharge; if valid_out is 0 then block
-    input logic valid_in,
-
-    output logic act_out,
-    output logic [16:0] dram_addr_out,  // row/col or special bits.
-    output logic [$clog2(BANK_GROUPS)-1:0] bank_group_out,
-    output logic [$clog2(BANKS_PER_GROUP)-1:0] bank_out,
+    output logic act_out, // Command bit
+    output logic [16:0] dram_addr_out  // row/col or special bits.
 
 );
 
     // Commands enum
-    typedef enum logic {
+    typedef enum logic[2:0] {
         READ = 3'b000,
         WRITE = 3'b001,
         ACTIVATE = 3'b010,
@@ -707,14 +933,15 @@ module command_clb #(
     } commands;
 
     logic ras, cas, we;
-    logic [16:0] dram_addr_temp;
 
     always_comb begin
-        dram_addr_temp[ROW_BITS-1:COL_BITS] = row_in[ROW_BITS-1:COL_BITS];
 
         // If row activation
         if (cmd_in == ACTIVATE) begin
             act_out = '0; // Deactivate command pin
+            ras = '0;
+          	cas = '0;
+          	we = '0;
 
             // Left-pad row address with 0's if row width is smaller than address width
             dram_addr_out = {{(17-ROW_BITS){1'b0}}, row_in};
@@ -725,27 +952,31 @@ module command_clb #(
 
             // Set command pins
             case (cmd_in)
-                READ:
+                READ: begin
                     ras = '1;
                     cas = '0;
                     we = '1;
-                WRITE:
+                end
+                WRITE: begin
                     ras = '1;
                     cas = '0;
                     we = '0;
-                PRECHARGE:
+                end
+                PRECHARGE: begin
                     ras = '0;
                     cas = '1;
                     we = '0;
-            // TODO: add valid check for BLOCK
+                end
+              	default: begin // Should not get here
+                  ras = 'x;
+                  cas = 'x;
+                  we = 'x;
+                end
             endcase
             // A10 is unused for commands, but could be used to indicate auto-precharge
             // Set command pins, set unused bits to 0
             dram_addr_out = {ras, cas, we, {(17-3-COL_BITS){1'b0}}, col_in};
         end
-
-        bank_group_out = bank_group_in;
-        bank_out = bank_in;
 
     end
 
