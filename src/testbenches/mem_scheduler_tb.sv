@@ -136,7 +136,7 @@ module request_scheduler_tb;
         cmd_ready = 1;  // Controller is not ready
         #10;
         valid_in = 0;  // Deassert valid_in
-        #10000; // wait for everything to finish
+        #200; // wait for everything to finish
 
         // Finish the simulation
         $finish;

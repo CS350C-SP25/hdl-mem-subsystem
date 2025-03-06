@@ -42,6 +42,7 @@ module mem_req_queue #(
         if (dequeue_in && !empty) begin
             next_size = size - 1;
             next_head = (head + 4'b1) & {$clog2(QUEUE_SIZE){1'b1}}; // % QUEUE_SIZE
+            $display("dequeuing \n");
         end
     end
     // Full & Empty Flags
@@ -113,82 +114,75 @@ module sdram_bank_state #(
     parameter NUM_GROUPS = 2, // Number of bank groups
     parameter BANKS_PER_GROUP = 2, // Number of banks per group
     parameter BANKS = NUM_GROUPS * BANKS_PER_GROUP, // Total number of banks
+    parameter ACTIVATION_LATENCY = 8,
+    parameter PRECHARGE_LATENCY = 5,
     type bank_row_t = logic
 )(
     input logic clk,               // Clock
     input logic rst,               // Reset
-    input logic [BANKS-1:0] bank_enable,  // Enable signal for each bank (1: enabled, 0: disabled)
     input logic [BANKS-1:0] precharge,    // Precharge signal for each bank (1: precharge, 0: no precharge)
     input logic [BANKS-1:0] activate,     // Activate signal for each bank (1: activate, 0: no activate)
     input bank_row_t row_address, // Row address to activate
-    input logic [$clog2(BANKS)-1:0] request_data,  // Request data signal for a bank
     output bank_row_t [BANKS-1:0] active_row_out,  // Active row for a selected bank
     output logic [BANKS-1:0] ready_to_access, // Bank ready to access (not in precharge)
-    output logic [BANKS-1:0] active_bank      // Bank currently active (activated but not precharged)
+    output logic [BANKS-1:0] active_bank,      // Bank currently active (activated but not precharged)
+    output logic [BANKS-1:0] blocked          // Bank is blocked (precharging)
 );
 
     // States for each bank
     bank_row_t [BANKS-1:0] active_row;  // Active row address for each bank
     logic [BANKS-1:0] active; // Active flag for each bank
     logic [BANKS-1:0] ready; // Ready flag for each bank (not in precharge)
-    
-    // Bank grouping logic
-    // reg [NUM_GROUPS-1:0] group_active [BANKS_PER_GROUP-1:0]; // Keeps track of group activations
-    // reg [BANKS_PER_GROUP-1:0] group_ready [NUM_GROUPS-1:0];  // Ready state for each group
+    logic [BANKS-1:0] blocked_reg; // Internal flag for blocked banks (precharging)
+    logic [BANKS-1:0] [31:0] cycle_count; // Cycle count for each bank
 
     // Handle bank state updates on each clock cycle
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
             // Reset all states to initial values
-            // active_row <= {ROW_WIDTH * BANKS{1'b0}};
             active <= {BANKS{1'b0}};
             ready <= {BANKS{1'b1}}; // All banks are initially ready (not in precharge)
-            // group_active <= '{default: 0};
-            // group_ready <= '{default: 1}; // All groups are initially ready (not in precharge)
+            blocked_reg <= {BANKS{1'b0}}; // No banks are blocked initially
+            cycle_count <= {BANKS{32'b0}}; // Initialize cycle counts to 0
         end else begin
             // For each bank, handle precharge, activation, and data request
             for (int i = 0; i < BANKS; i++) begin
-                if (bank_enable[i]) begin
-                    if (precharge[i]) begin
-                        // Precharge operation: bank is not active and ready
-                        active[i] <= 0;
-                        ready[i] <= 1;  // Bank is ready after precharge
-                    end else if (activate[i]) begin
-                        // Activate operation: store the row address and mark the bank as active
-                        active_row[i] <= row_address;
-                        active[i] <= 1; // Bank is active
-                        ready[i] <= 0;  // Bank is not ready during activation
-                    end else if (request_data[i] && active[i]) begin
-                        // Data request: The bank must be active
-                        // Here, you can add logic to fetch the requested data from the active row
+                if (blocked_reg[i]) begin
+                    // If the bank is blocked (precharging), check if latency is expired
+                    if (cycle_count[i] == 0) begin
+                        // Unblock the bank after the latency period has passed
+                        blocked_reg[i] <= 0;
+                        ready[i] <= 1; // Bank is now ready
+                    end else begin
+                        // Keep the bank blocked and increment the cycle count
+                        cycle_count[i] <= cycle_count[i] - 1;
                     end
+                end else if (precharge[i]) begin
+                    // Precharge operation: block the bank and reset cycle count
+                    blocked_reg[i] <= 1;
+                    cycle_count[i] <= PRECHARGE_LATENCY; // Start counting cycles for precharge latency
+                    active[i] <= 0;
+                    ready[i] <= 0; // Bank is not ready during precharge
+                end else if (activate[i]) begin
+                    // Activate operation: store the row address and mark the bank as active
+                    active_row[i] <= row_address;
+                    blocked_reg[i] <= 1;
+                    cycle_count[i] <= ACTIVATION_LATENCY;
+                    active[i] <= 1; // Bank is active
+                    ready[i] <= 0;  // Bank is not ready during activation
                 end
             end
         end
     end
 
-    // Group management
-    // always_ff @(posedge clk) begin
-    //     for (int g = 0; g < NUM_GROUPS; g++) begin
-    //         // If any bank in the group is activated, mark the group as active
-    //         group_active[g] <= |(activate[g*BANKS_PER_GROUP +: BANKS_PER_GROUP]);
-            
-    //         // If all banks in the group are in ready state, mark the group as ready
-    //         group_ready[g] <= &ready[g*BANKS_PER_GROUP +: BANKS_PER_GROUP];
-    //     end
-    // end
-
     // Outputs for each bank and group
     assign active_row_out = active_row; // Example output, can modify based on the active bank/group selection
     assign ready_to_access = ready;        // Ready to access signals for each bank
     assign active_bank = active;          // Active bank signals
-    
-    // Example: Optionally, you can assign the group-ready state or active state
-    // based on a specific bank or group.
-    // You can also output the active row of a specific group by selecting which
-    // bank or group is relevant at any given time.
+    assign blocked = blocked_reg;         // Output the blocked state for each bank
 
 endmodule
+
 
 module request_scheduler #(
     parameter int A = 8,
@@ -253,15 +247,17 @@ module request_scheduler #(
     } bank_row_t;
 
     typedef struct packed {
-        logic [BANKS-1:0] bank_enable;  // Enable signal for each bank (1: enabled, 0: disabled)
         logic [BANKS-1:0] precharge;    // Precharge signal for each bank (1: precharge, 0: no precharge)
         logic [BANKS-1:0] activate;     // Activate signal for each bank (1: activate, 0: no activate)
         bank_row_t row_address; // Row address to activate
-        logic [$clog2(BANKS)-1:0] request_data;  // Request data signal for each bank
+    } bank_state_params_in_t;
+
+    typedef struct packed {
         bank_row_t [BANKS-1:0] active_row_out;  // Active row for a selected bank
         logic [BANKS-1:0] ready_to_access; // Bank ready to access (not in precharge)
         logic [BANKS-1:0] active_bank;
-    } bank_state_params_t;
+        logic [BANKS-1:0] blocked;
+    } bank_state_params_out_t;
 
     // Function to set fields of a write request
     function automatic void init_mem_req(
@@ -285,10 +281,81 @@ module request_scheduler #(
         req.valid = 1'b1;
         req.write = write;
     endfunction
+    function automatic void process_bank_commands(
+        input int unsigned p,
+        ref mem_queue_params [BANKS-1:0] params,
+        ref bank_state_params_in_t bank_state_params_in,
+        ref bank_state_params_out_t bank_state_params_out,
+        input logic [2:0] cmds[4],
+        output logic done,
+        output logic valid_out_t,
+        output logic [2:0] cmd_out_t,
+        output logic [ROW_BITS-1:0] row_out_t,
+        output logic [COL_BITS-1:0] col_out_t,
+        output logic [63:0] val_out_t,
+        output logic [$clog2(BANKS_PER_GROUP)-1:0] bank_out_t,
+        output logic [$clog2(BANK_GROUPS)-1:0] bank_group_out_t
+    );
+        done = 1'b0;
+        valid_out_t = 1'b0;
+        
+        for (int i = 0; i < BANKS; i++) begin
+            if (!params[i].ready_empty_out && 
+                !bank_state_params_out.blocked[i[$clog2(BANKS)-1:0]] && 
+                (p == 2 || p == 3 || 
+                params[i].ready_top_out.row == bank_state_params_out.active_row_out[i[$clog2(BANKS)-1:0]])) begin
+                
+                mem_request_t top = params[i].ready_top_out;
+                $display("considering cmd %d for p %d and bank idx %d", cmds[p], p, i);
+                
+                done = 1'b1;
+                valid_out_t = 1'b1;
+                cmd_out_t = cmds[p];
+                row_out_t = top.row;
+                col_out_t = top.col;
+                
+                if (p == 1) begin
+                    val_out_t = top.val_in;
+                end else if (p == 2) begin
+                    bank_state_params_in.activate = bank_state_params_out.active_bank;
+                    bank_state_params_in.activate[i] = 1'b1;
+                    bank_state_params_in.row_address = top.row;
+                    val_out_t = 'b0;
+                end else if (p == 3) begin
+                    bank_state_params_in.precharge = bank_state_params_out.ready_to_access;
+                    bank_state_params_in.precharge[i] = 1'b1;
+                    val_out_t = 'b0;
+                end else begin
+                    val_out_t = 'b0;
+                end
+                
+                bank_out_t = top.bank;
+                bank_group_out_t = top.bank_group;
+                
+                params[i].transfer_ready = 1'b1;
+                break;
+            end
+        end
+    endfunction
+
+    function automatic void reset_mem_queue_params (
+        output mem_queue_params [BANKS-1:0] params
+    );
+        for (int i = 0; i < BANKS; i++) begin
+            params[i].enqueue_in = 'b0;
+            params[i].dequeue_in = 'b0;
+            params[i].transfer_ready = 'b0;
+            params[i].req_in = incoming_req;
+            params[i].promote = 'b0;
+            params[i].incoming = 'b0;
+        end
+    endfunction
 
     logic [31:0] cycle_counter;
     logic [$clog2(BANK_GROUPS) + $clog2(BANKS_PER_GROUP) - 1:0] bank_idx;
-    bank_state_params_t bank_state_params;
+    bank_state_params_in_t bank_state_params_in;
+    bank_state_params_out_t bank_state_params_out;
+    bank_state_params_out_t bank_state;
     mem_queue_params [BANKS-1:0] read_params;
     mem_queue_params [BANKS-1:0] write_params;
     mem_queue_params [BANKS-1:0] precharge_params;
@@ -297,6 +364,15 @@ module request_scheduler #(
     logic [2:0] cmds [4] = {3'b000, 3'b001, 3'b010, 3'b011}; // Read, Write, Activate, Precharge
     logic done;
     mem_request_t incoming_req;
+
+    // tmp holding regs
+    logic [$clog2(BANK_GROUPS)-1:0] bank_group_out_t;
+    logic [$clog2(BANKS_PER_GROUP)-1:0] bank_out_t;
+    logic [ROW_BITS-1:0] row_out_t;
+    logic [COL_BITS-1:0] col_out_t;
+    logic [63:0] val_out_t;
+    logic [2:0] cmd_out_t; // 0 is read, 1 is write, 2 is activate, 3 is precharge; if valid_out is 0 then block
+    logic valid_out_t;
     
     assign bank_idx = bank_group_in * bank_in;
 
@@ -305,17 +381,16 @@ module request_scheduler #(
         .NUM_GROUPS(BANK_GROUPS),
         .BANKS_PER_GROUP(BANKS_PER_GROUP),
         .bank_row_t(bank_row_t)
-    ) bank_state(
+    ) bank_state_reg(
         clk_in, 
         rst_in,
-        bank_state_params.bank_enable, 
-        bank_state_params.precharge, 
-        bank_state_params.activate, 
-        bank_state_params.row_address, 
-        bank_state_params.request_data, 
-        bank_state_params.active_row_out,  
-        bank_state_params.ready_to_access, 
-        bank_state_params.active_bank 
+        bank_state_params_in.precharge, 
+        bank_state_params_in.activate, 
+        bank_state_params_in.row_address, 
+        bank_state_params_out.active_row_out,  
+        bank_state_params_out.ready_to_access, 
+        bank_state_params_out.active_bank,
+        bank_state_params_out.blocked 
     );
 
     // step 3b. enqueues if activation_queue is promoting its top element and not a write request. dequeues when promote is active
@@ -392,7 +467,6 @@ module request_scheduler #(
         if (rst_in) begin
             cycle_counter <= 0;
             // Reset other variables to prevent inferred latches
-            done <= 1'b0;
             valid_out <= 1'b0;
             cmd_out <= '0;
             row_out <= '0;
@@ -402,102 +476,151 @@ module request_scheduler #(
             bank_group_out <= '0;
         end else begin
             cycle_counter <= cycle_counter + 1;
+            bank_group_out <= bank_group_out_t;
+            bank_out <= bank_out_t;
+            row_out <= row_out_t;
+            col_out <= col_out_t;
+            val_out <= val_out_t;
+            cmd_out <= cmd_out_t;
+            valid_out <= valid_out_t;
+        end
+    end
+
+    /*
+    typedef struct packed {
+        logic enqueue_in;
+        logic dequeue_in;
+        logic transfer_ready; // command is available 
+        mem_request_t req_in;
+        mem_request_t ready_top_out;
+        mem_request_t pending_top_out;
+        logic ready_empty_out; // if empty then top doesnt matter
+        logic pending_empty_out;
+        logic promote;
+        logic incoming; // if theres an incoming request into the scheduler and it needs to be placed in the queue, it takes priority over a promotion
+    } mem_queue_params;
+    */
+    always_comb begin
+        done = 1'b0;
+        valid_out_t = 1'b0;
+        cmd_out_t = 'b0;
+        row_out_t = 'b0;
+        col_out_t = 'b0;
+        val_out_t = 'b0;
+        bank_out_t = 'b0;
+        bank_group_out_t = 'b0;
+        bank_state_params_in.activate = bank_state_params_out.active_bank;
+        bank_state_params_in.precharge = bank_state_params_out.ready_to_access;
+        bank_state = bank_state_params_out;
+        init_mem_req(
+            incoming_req,
+            bank_group_in,
+            bank_in,
+            row_in,
+            col_in,
+            val_in,
+            cycle_counter,
+            write_in,
+            3'b000
+        );
+        bank_state_params_in.row_address = 'b0;
+        reset_mem_queue_params(read_params);
+        reset_mem_queue_params(write_params);
+        reset_mem_queue_params(precharge_params);
+        reset_mem_queue_params(activation_params);
+
+        if (valid_in) begin
+            // Access enter queue algorithm
             
-            if (valid_in) begin
-                // Access enter queue algorithm
-                init_mem_req(
-                    incoming_req,
-                    bank_group_in,
-                    bank_in,
-                    row_in,
-                    col_in,
-                    val_in,
-                    cycle_counter,
-                    write_in,
-                    3'b000
-                );
-                
-                // Queue selection logic
-                if (bank_state_params.ready_to_access[bank_idx]) begin
-                    // Precharged but not activated
-                    $display("adding to activation queue idx %d\n", bank_idx);
-                    activation_params[bank_idx].enqueue_in = 1'b1;
-                    activation_params[bank_idx].incoming = 1'b1;
-                    activation_params[bank_idx].req_in = incoming_req;
-                end else if (bank_state_params.active_bank[bank_idx] && 
-                            bank_state_params.active_row_out[bank_idx] == row_in) begin
-                    $display("adding to r/w queue\n");
-                    // Active bank, put in respective queue
-                    if (write_in) begin
-                        write_params[bank_idx].enqueue_in = 1'b1;
-                        write_params[bank_idx].incoming = 1'b1;
-                        write_params[bank_idx].req_in = incoming_req;
-                    end else begin
-                        read_params[bank_idx].enqueue_in = 1'b1;
-                        read_params[bank_idx].incoming = 1'b1;
-                        read_params[bank_idx].req_in = incoming_req;
-                    end
+            // Queue selection logic
+            if (bank_state_params_out.ready_to_access[bank_idx]) begin
+                // Precharged but not activated
+                $display("adding to activation queue idx %d\n", bank_idx);
+                activation_params[bank_idx].enqueue_in = 1'b1;
+                activation_params[bank_idx].incoming = 1'b1;
+                activation_params[bank_idx].req_in = incoming_req;
+            end else if (bank_state_params_out.active_bank[bank_idx] && 
+                        bank_state_params_out.active_row_out[bank_idx] == row_in) begin
+                $display("adding to r/w queue\n");
+                // Active bank, put in respective queue
+                if (write_in) begin
+                    write_params[bank_idx].enqueue_in = 1'b1;
+                    write_params[bank_idx].incoming = 1'b1;
+                    write_params[bank_idx].req_in = incoming_req;
                 end else begin
-                    $display("adding to precharge queue\n");
-                    precharge_params[bank_idx].enqueue_in = 1'b1;
-                    precharge_params[bank_idx].req_in = incoming_req;
-                end
-            end
-            if (cmd_ready) begin
-                // Update params array
-                params[0] = read_params;
-                params[1] = write_params;
-                params[2] = activation_params;
-                params[3] = precharge_params;
-                done <= 1'b0;
-                valid_out <= 1'b0;
-                
-                // Command selection logic
-                for (int p = 0; p < 4 && !done; p++) begin
-                    for (int i = 0; i < BANKS; i++) begin
-                        // bank_state_params.request_data = i[$clog2(BANKS)-1:0];
-                        // if p == 0 or p == 1, read/write, the active_row needs to be the same row
-                        if (!params[p][i].ready_empty_out && 
-                            (
-                                p == 2 || p == 3 || 
-                                params[p][i].ready_top_out.row == bank_state_params.active_row_out[i[$clog2(BANKS)-1:0]]
-                            )) begin
-                            mem_request_t top = params[p][i].ready_top_out;
-                            $display("considering cmd %d", cmds[p]);
-                            
-                            done <= 1'b1;
-                            valid_out <= 1'b1;
-                            cmd_out <= cmds[p];
-                            row_out <= top.row;
-                            col_out <= top.col;
-                            
-                            if (p == 1) begin
-                                val_out <= top.val_in;
-                            end else if (p == 2) begin
-                                bank_state_params.activate = bank_state_params.active_bank;
-                                bank_state_params[i] <= 1'b1; // active
-                                bank_state_params.row_address <= top.row;
-                            end else if (p == 3) begin
-                                bank_state_params.precharge = bank_state_params.ready_to_access;
-                                bank_state_params.precharge[i] <= 1'b1;
-                            end
-                            
-                            bank_out <= top.bank;
-                            bank_group_out <= top.bank_group;
-                            
-                            params[p][i].transfer_ready = 1'b1;
-                            break;
-                        end
-                    end
-                end
-                
-                // Final fallback if no command selected
-                if (!done) begin
-                    valid_out <= 1'b0;
+                    read_params[bank_idx].enqueue_in = 1'b1;
+                    read_params[bank_idx].incoming = 1'b1;
+                    read_params[bank_idx].req_in = incoming_req;
                 end
             end else begin
-                valid_out <= 1'b0;
+                $display("adding to precharge queue\n");
+                precharge_params[bank_idx].enqueue_in = 1'b1;
+                precharge_params[bank_idx].req_in = incoming_req;
             end
+        end
+        if (cmd_ready) begin
+            // Update params array
+            
+            process_bank_commands(
+                0,
+                read_params,
+                bank_state_params_in,
+                bank_state,
+                cmds,
+                done,
+                valid_out_t,
+                cmd_out_t,
+                row_out_t,
+                col_out_t,
+                val_out_t,
+                bank_out_t,
+                bank_group_out_t
+            );
+            process_bank_commands(
+                0,
+                write_params,
+                bank_state_params_in,
+                bank_state,
+                cmds,
+                done,
+                valid_out_t,
+                cmd_out_t,
+                row_out_t,
+                col_out_t,
+                val_out_t,
+                bank_out_t,
+                bank_group_out_t
+            );
+            process_bank_commands(
+                0,
+                activation_params,
+                bank_state_params_in,
+                bank_state,
+                cmds,
+                done,
+                valid_out_t,
+                cmd_out_t,
+                row_out_t,
+                col_out_t,
+                val_out_t,
+                bank_out_t,
+                bank_group_out_t
+            );
+            process_bank_commands(
+                0,
+                precharge_params,
+                bank_state_params_in,
+                bank_state,
+                cmds,
+                done,
+                valid_out_t,
+                cmd_out_t,
+                row_out_t,
+                col_out_t,
+                val_out_t,
+                bank_out_t,
+                bank_group_out_t
+            );
         end
     end
 
