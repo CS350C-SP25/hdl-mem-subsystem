@@ -194,9 +194,7 @@ module last_level_cache #(
                 end
             end
 
-            //--------------------------------------------------
-            MISS_DRAM_READ: begin
-                // Issue read request to DRAM
+            MISS_DRAM_READ: begin // Issue read request to DRAM
                 mem_bus_valid_out = 1'b1;  // request DRAM read
                 next_state        = WAIT_DRAM_READ;
             end
@@ -313,7 +311,7 @@ module ddr4_sdram_controller #(
     // Inout on memory bus
     inout logic [63:0] mem_bus_value_io,  //
     // Outputs to DDR4 SDRAM
-    output logic act_out,  // Activate sdram
+    output logic act_out,  // Activate sdram, when this is high, we need to set RAS,CAS,WE
     output logic [16:0] dram_addr_out,  // row/col or special bits.
     output logic [1:0] bg_out,  // Bank group id
     output logic [1:0] ba_out,  // Bank id
@@ -936,6 +934,8 @@ endmodule: request_scheduler
 module address_parser #(
     parameter int ROW_BITS = 8,  // log2(ROWS)
     parameter int COL_BITS = 4,  // log2(COLS)
+    parameter int BANK_GROUPS = 8,
+    parameter int BANKS = 8,  // banks per group
     parameter int PADDR_BITS = 19
 ) (
     input  logic [PADDR_BITS-1:0] mem_bus_addr_in,
