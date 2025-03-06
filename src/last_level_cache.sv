@@ -296,14 +296,19 @@ module ddr4_sdram_controller #(
     parameter int ROW_BITS = 8,  // log2(ROWS)
     parameter int COL_BITS = 4,  // log2(COLS)
     parameter int PADDR_BITS = 19
+
+    // Following parameters added by us
+    parameter int BUS_WIDTH = 16,  // bus width per chip
+    parameter int BANK_GROUPS = 8,
+    parameter int BANKS_PER_GROUP = 8
 ) (
     // Generic
     input clk_in,
     input rst_N_in,
     input cs_N_in,
     // Inputs from memory bus
-    input logic mem_bus_ready_in,  // DRAM is ready to receive info
-    input logic mem_bus_valid_in,  // DRAM data is ready for LLC to consume
+    input logic mem_bus_ready_in,  // DRAM is ready to receive info (unused)
+    input logic mem_bus_valid_in,  // DRAM data is ready for LLC to consume (unused)
     input logic [PADDR_BITS-1:0] mem_bus_addr_in,  // Address from the last-level cache
     // Inout on memory bus
     inout logic [63:0] mem_bus_value_io,  //
@@ -313,11 +318,85 @@ module ddr4_sdram_controller #(
     output logic [1:0] bg_out,  // Bank group id
     output logic [1:0] ba_out,  // Bank id
     output logic [63:0] dqm_out,  // Data mask in. Set to one to block masks
-    output logic mem_bus_ready_out,  // LLC ready to receive info
-    output logic mem_bus_valid_out,  // DRAM info is ready for LLC.
+    output logic mem_bus_ready_out,  // Ready to receive info from LLC
+    output logic mem_bus_valid_out,  // DRAM info is ready for LLC
     // Inouts to DDR4 SDRAM
     inout logic [63:0] dqs  // Data ins/outs from all dram chips
 );
+    // TODO: add functionality for chip select?
+
+    logic mem_bus_ready, mem_bus_valid;
+
+    // CLB. Parse address from LLC
+    logic [16:0] parsed_addr;
+    logic [1:0] parsed_bg, parsed_ba;
+
+    address_parser #(
+        .ROW_BITS(ROW_BITS),  // log2(ROWS)
+        .COL_BITS(COL_BITS),  // log2(COLS)
+        .PADDR_BITS(PADDR_BITS)
+        )
+    address_parse (
+        .mem_bus_addr_in(mem_bus_addr_in),
+        .addr_out(parsed_addr),  
+        .bg_out(parsed_bg),     // Bank group id
+        .ba_out(parsed_ba)      // Bank id
+    );
+
+    logic schedule_valid_out;
+    request_scheduler #(
+        .BUS_WIDTH(BUS_WIDTH),  // bus width per chip
+        .BANK_GROUPS(BANK_GROUPS),
+        .BANKS_PER_GROUP(BANKS_PER_GROUP),       // banks per group
+        .ROW_BITS(ROW_BITS),    // bits to address rows
+        .COL_BITS(COL_BITS)     // bits to address columns
+        )
+    request_schedule (
+        .clk_in(clk_in),
+        .rst_in(rst_in),
+        .bank_group_in(parsed_bg), // bank group from LLC
+        .bank_in(parsed_ba), // bank from LLC
+        .row_in(parsed_addr[ROW_BITS+COL_BITS:COL_BITS]),
+        .col_in(parsed_addr[COL_BITS-1:0]),
+        .valid_in(), // if not valid ignore
+        .write_in(), // if val is ok to write (basically write request)
+        .val_in(), // val to write if write
+        .cmd_ready(), // is controller ready to receive command TODO verify this will work
+        .bank_group_out(bg_out),
+        .bank_out(ba_out),
+        .val_out(dqs), // TODO: Does this need need intermediate?
+        .valid_out(schedule_valid_out)
+    );
+
+    command_clb #(
+        .ROW_BITS(ROW_BITS),    // bits to address rows
+        .COL_BITS(COL_BITS)    // bits to address columns
+        )
+    command (
+        .row_in(row_temp),
+        .col_in(col_temp),
+        .cmd_in(cmd_temp),
+        .act_out(act_out),
+        .dram_addr_out(dram_addr_out)
+    );
+
+    // Set default values
+    always_ff @(posedge clk_in or posedge rst_N_in) begin
+        if (rst_N_in) begin
+            mem_bus_ready <= '0;
+            mem_bus_valid <= '0;
+
+        end else begin
+            mem_bus_valid <= schedule_valid_out;
+            
+        end
+
+
+
+        mem_bus_ready_out <= mem_bus_ready;
+        mem_bus_valid_out <= mem_bus_valid;
+    end
+
 endmodule : ddr4_sdram_controller
 
 
