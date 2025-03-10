@@ -355,6 +355,8 @@ module ddr4_sdram_controller #(
         .ba_out(parsed_ba)      // Bank id
     );
 
+
+    // TODO: add input to receive bursting output from command_sender module
     logic schedule_valid_out;
     request_scheduler #(
         .BUS_WIDTH(BUS_WIDTH),  // bus width per chip
@@ -1061,6 +1063,7 @@ module command_sender #(
     parameter int COL_BITS = 4     // bits to address columns
 ) (
     input logic clk_in,
+    input logic rst_in,
     input logic [$clog2(BANK_GROUPS)-1:0] bank_group_in,
     input logic [$clog2(BANKS_PER_GROUP)-1:0] bank_in,
     input logic [ROW_BITS-1:0] row_in,
@@ -1068,32 +1071,106 @@ module command_sender #(
     input logic valid_in, // if not valid ignore
     input logic write_in, // if val is ok to write (basically write request)
     input logic [63:0] val_in, // val to write if write
+    input logic [2:0] cmd_in
 
     output logic [$clog2(BANK_GROUPS)-1:0] bank_group_out,
     output logic [$clog2(BANKS_PER_GROUP)-1:0] bank_out,
     output logic act_out, // Command bit
     output logic [16:0] dram_addr_out,  // row/col or special bits.
     output logic [63:0] val_out,
-    output logic receiving_burst, // set to HI when receiving a response from the DIMM
+    output logic bursting, // set to HI when receiving/sending a burst to/from the DIMM
     inout logic [63:0] mem_bus_value_io  // Load / Store value for memory module
 );
     
-    // Receive command from scheduler (valid_in is 1) (CLB)
+    // Trust the scheduler to not send commands that conflict with incoming data
+    logic [31:0] counter;
 
+    // Commands enum
+    typedef enum logic[2:0] {
+        READ = 3'b000,
+        WRITE = 3'b001
+    } commands;
 
-    // Put command in queue (in case we have to wait for a response before issuing this command) (CLB)
+    // Module for queueing memory requests
+    typedef struct packed {
+        logic [$clog2(BANK_GROUPS)-1:0] bank_group;
+        logic [$clog2(BANKS_PER_GROUP)-1:0] bank;
+        logic [ROW_BITS-1:0] row;
+        logic [COL_BITS-1:0] col;
+        logic [31:0] done_count; // cycle counter of when this request is finished and on the bus
+    } read_request_t;
 
+    logic   enqueue_in,
+            dequeue_in,
+            empty,
+            full;
+    logic [31:0] clk_in;
+    read_request_t req_in, req_out;
 
-    // Check pending command queue if there is data we're receiving this clock cycle (CLB)
+    mem_req_queue #(
+        QUEUE_SIZE=32,
+        read_request_t // default placeholder
+    ) (
+        .clk_in(clk_in),
+        .rst_in(rst_in),
+        .enqueue_in(enqueue_in),
+        .dequeue_in(dequeue_in),
+        .req_in(req_in),
+        .cycle_count(),
+        .req_out(req_out),
+        .empty(empty),
+        .full(full)
+    ) read_queue;
+    
+    // Check if command from scheduler is valid
+    if (valid_in) begin
+        // Accept command from scheduler (CLB)
+        // Encode command info to be sent to DIMM
+        command_clb #(
+            .ROW_BITS(ROW_BITS),    // bits to address rows
+            .COL_BITS(COL_BITS)    // bits to address columns
+        )
+        command (
+            .row_in(row_in),
+            .col_in(col_in),
+            .cmd_in(cmd_in),
+            .act_out(act_out),
+            .dram_addr_out(dram_addr_out)
+        );
+        
+        // If the command is a Read, put it in the read queue. Remember the time the command is supposed to finish
+        if (cmd_in == READ) begin
+            // TODO: Add (counter + CAS_LATENCY) to queue also check if this is off by one
+        end
 
+        // If the command is a Write, begin bursting
+        if (cmd_in == WRITE) begin
+            // TODO: consult DIMM code for how to burst Write
+            // Remember to set bursting to 1
+        end
 
-    // If we're receiving data from the DIMM this cycle, receive it
+    end else begin
+    // Else, check head of pending command queue to see if its end time matches the counter
+        // If so, begin burst reading
+            // TODO: consult DIMM code for how to burst Read
+            // Remember to set bursting to 1
+        
+        // Forward complete data up the bus to LLC
+    end
 
+    // Increment counter
+    always_ff @(posedge reset or posedge clk)
+        if (reset) begin
+            counter <= '0;
+            clk_in <= 0;
+            enqueue_in <= 0;
+            dequeue_in <= 0;
+            // TODO: clear req_in too?
 
-    // If we're not receiving data NEXT cycle, stage data 
+        end else begin
+            counter <= counter + 1;
 
-
-    // Update waiting times of pending commands
+        end
 
 endmodule
 
