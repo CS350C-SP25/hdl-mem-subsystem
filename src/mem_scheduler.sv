@@ -522,6 +522,14 @@ module request_scheduler #(
         logic incoming; // if theres an incoming request into the scheduler and it needs to be placed in the queue, it takes priority over a promotion
     } mem_queue_params;
     */
+    logic read_prio;
+    generate
+        logic[BANKS-1:0] read_prio_out;
+        for (genvar i = 0; i < BANKS; i++) begin
+            assign read_prio_out[i] = !read_params_out[i].ready_empty_out && read_params_out[i].ready_top_out.cycle_count > write_params_out[i].ready_top_out.cycle_count && read_params_out[i].ready_top_out.cycle_count < cycle_counter;
+        end
+        assign read_prio = |read_prio_out;
+    endgenerate
     always_comb begin
         done = 1'b0;
         valid_out_t = 1'b0;
@@ -582,7 +590,7 @@ module request_scheduler #(
         end
         if (cmd_ready) begin
             // Update params array
-            if (!read_params_out.ready_empty_out && read_params_out.ready_top_out.cycle_count > write_params_out.ready_top_out.cycle_count && read_params_out.cycle_count < cycle_counter) begin
+            if (read_prio) begin
                 process_bank_commands(
                     0,
                     read_params_in,
