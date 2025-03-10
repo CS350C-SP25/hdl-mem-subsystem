@@ -1,5 +1,5 @@
 module request_scheduler_tb;
-
+    parameter int PADDR_BITS = 19;
     // Testbench signals
     logic clk_in;
     logic rst_in;
@@ -12,6 +12,7 @@ module request_scheduler_tb;
     logic [511:0] val_in;
     logic cmd_ready;
     
+    logic [PADDR_BITS-1:0] addr_out;
     logic [$clog2(8)-1:0] bank_group_out; // BANK_GROUPS = 8
     logic [$clog2(8)-1:0] bank_out;       // BANKS_PER_GROUP = 8
     logic [8-1:0] row_out;                // ROW_BITS = 8
@@ -30,6 +31,7 @@ module request_scheduler_tb;
         .BANKS_PER_GROUP(8),
         .ROW_BITS(8),
         .COL_BITS(4),
+        .PADDR_BITS(PADDR_BITS),
         .QUEUE_SIZE(16),
         .ACTIVATION_LATENCY(8),
         .PRECHARGE_LATENCY(5),
@@ -45,6 +47,7 @@ module request_scheduler_tb;
         .write_in(write_in),
         .val_in(val_in),
         .cmd_ready(cmd_ready),
+        .addr_out(addr_out),
         .bank_group_out(bank_group_out),
         .bank_out(bank_out),
         .row_out(row_out),

@@ -7,6 +7,7 @@ module request_scheduler #(
     parameter int BANKS_PER_GROUP = 8,       // banks per group
     parameter int ROW_BITS = 8,    // bits to address rows
     parameter int COL_BITS = 4,     // bits to address columns
+    parameter int PADDR_BITS = 19,
     parameter int QUEUE_SIZE = 16, // set this, play around with it
     parameter int ACTIVATION_LATENCY = 8,
     parameter int PRECHARGE_LATENCY = 5, 
@@ -23,7 +24,7 @@ module request_scheduler #(
     input logic [511:0] val_in, // val to write if write
     input logic cmd_ready, // is controller ready to receive command
     // input logic bursting,
-
+    output logic [PADDR_BITS-1:0] addr_out,
     output logic [$clog2(BANK_GROUPS)-1:0] bank_group_out,
     output logic [$clog2(BANKS_PER_GROUP)-1:0] bank_out,
     output logic [ROW_BITS-1:0] row_out,
@@ -33,6 +34,7 @@ module request_scheduler #(
     output logic valid_out
 );
     typedef struct packed {
+        logic [PADDR_BITS-1:0] addr;
         logic [$clog2(BANK_GROUPS)-1:0] bank_group;
         logic [$clog2(BANKS_PER_GROUP)-1:0] bank;
         logic [ROW_BITS-1:0] row;
@@ -80,6 +82,7 @@ module request_scheduler #(
     // Function to set fields of a write request
     function automatic void init_mem_req(
         output mem_request_t req,
+        input logic [PADDR_BITS-1:0] addr,
         input logic [$clog2(BANK_GROUPS)-1:0] bg,
         input logic [$clog2(BANKS_PER_GROUP)-1:0] b,
         input logic [ROW_BITS-1:0] r,
@@ -89,6 +92,7 @@ module request_scheduler #(
         input logic write,
         input logic [2:0] state
     );
+        req.addr = addr;
         req.bank_group = bg;
         req.bank = b;
         req.row = r;
@@ -191,6 +195,7 @@ module request_scheduler #(
     mem_request_t incoming_req;
 
     // tmp holding regs
+    logic [PADDR_BITS-1:0] addr_out_t;
     logic [$clog2(BANK_GROUPS)-1:0] bank_group_out_t;
     logic [$clog2(BANKS_PER_GROUP)-1:0] bank_out_t;
     logic [ROW_BITS-1:0] row_out_t;
@@ -301,6 +306,7 @@ module request_scheduler #(
             bank_group_out <= '0;
         end else begin
             cycle_counter <= cycle_counter + 1;
+            addr_out <= addr_out_t;
             bank_group_out <= bank_group_out_t;
             bank_out <= bank_out_t;
             row_out <= row_out_t;
