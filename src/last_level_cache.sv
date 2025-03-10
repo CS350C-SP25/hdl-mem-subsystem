@@ -322,6 +322,8 @@ module ddr4_sdram_controller #(
     inout logic [63:0] dqs  // Data ins/outs from all dram chips
 );
 
+    assign dqm_out = '0;
+
     typedef enum logic [3:0] {
         IDLE,
         ROW_ACT,
@@ -1046,6 +1048,52 @@ module command_clb #(
         end
 
     end
+
+endmodule
+
+
+// Module to send commands to DIMM and receive responses
+module command_sender #(
+    parameter int CAS_LATENCY = 22,
+    parameter int BANK_GROUPS = 8,
+    parameter int BANKS_PER_GROUP = 8,       // banks per group
+    parameter int ROW_BITS = 8,    // bits to address rows
+    parameter int COL_BITS = 4     // bits to address columns
+) (
+    input logic clk_in,
+    input logic [$clog2(BANK_GROUPS)-1:0] bank_group_in,
+    input logic [$clog2(BANKS_PER_GROUP)-1:0] bank_in,
+    input logic [ROW_BITS-1:0] row_in,
+    input logic [COL_BITS-1:0] col_in,
+    input logic valid_in, // if not valid ignore
+    input logic write_in, // if val is ok to write (basically write request)
+    input logic [63:0] val_in, // val to write if write
+
+    output logic [$clog2(BANK_GROUPS)-1:0] bank_group_out,
+    output logic [$clog2(BANKS_PER_GROUP)-1:0] bank_out,
+    output logic act_out, // Command bit
+    output logic [16:0] dram_addr_out,  // row/col or special bits.
+    output logic [63:0] val_out,
+    output logic receiving_burst, // set to HI when receiving a response from the DIMM
+    inout logic [63:0] mem_bus_value_io  // Load / Store value for memory module
+);
+    
+    // Receive command from scheduler (valid_in is 1) (CLB)
+
+
+    // Put command in queue (in case we have to wait for a response before issuing this command) (CLB)
+
+
+    // Check pending command queue if there is data we're receiving this clock cycle (CLB)
+
+
+    // If we're receiving data from the DIMM this cycle, receive it
+
+
+    // If we're not receiving data NEXT cycle, stage data 
+
+
+    // Update waiting times of pending commands
 
 endmodule
 
