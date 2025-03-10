@@ -137,10 +137,10 @@ module request_scheduler #(
                 cmd_out_t = cmds[p];
                 row_out_t = top.row;
                 col_out_t = top.col;
-                
-                if (p == 1) begin
+                // Which command are we considering sending out to DRAM bank?
+                if (p == 1) begin // write command
                     val_out_t = top.val_in;//not bursting??
-                end else if (p == 2) begin
+                end else if (p == 2) begin // activate command
                     bank_state_params_in.activate = bank_state_params_out.active_bank;
                     bank_state_params_in.activate[i] = 1'b1;
                     bank_state_params_in.row_address = top.row;
@@ -149,7 +149,7 @@ module request_scheduler #(
                     bank_state_params_in.precharge = bank_state_params_out.ready_to_access;
                     bank_state_params_in.precharge[i] = 1'b1;
                     val_out_t = 'b0;
-                end else begin
+                end else begin // read command
                     val_out_t = 'b0;//
                 end
                 
@@ -388,10 +388,10 @@ module request_scheduler #(
                 precharge_params_in[bank_idx].req_in = incoming_req;
             end
         end
-        if (cmd_ready) begin
+        if (cmd_ready) begin // DRAM has a one cycle slot for the SDRAM controller to send out the command, let's see which bank queue to send command out
             // Update params array
-            if (read_prio) begin
-                if (last_read < cycle_counter - 4) begin
+            if (read_prio) begin // are there any pending read requests that are older than write reqeusts?
+                if (last_read < cycle_counter - 4) begin // ensure that there has been at least 4 cycles since the last read command (bursting)
                     process_bank_commands(
                         0,
                         read_params_in,
