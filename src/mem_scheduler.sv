@@ -215,6 +215,7 @@ module request_scheduler #(
     input logic write_in, // if val is ok to write (basically write request)
     input logic [63:0] val_in, // val to write if write
     input logic cmd_ready, // is controller ready to receive command
+    input logic bursting,
 
     output logic [$clog2(BANK_GROUPS)-1:0] bank_group_out,
     output logic [$clog2(BANKS_PER_GROUP)-1:0] bank_out,
@@ -224,6 +225,7 @@ module request_scheduler #(
     output logic [2:0] cmd_out, // 0 is read, 1 is write, 2 is activate, 3 is precharge; if valid_out is 0 then block
     output logic valid_out
 );
+    command_sender dsahj ();
     typedef struct packed {
         logic [$clog2(BANK_GROUPS)-1:0] bank_group;
         logic [$clog2(BANKS_PER_GROUP)-1:0] bank;
@@ -291,6 +293,7 @@ module request_scheduler #(
         req.valid = 1'b1;
         req.write = write;
     endfunction
+
     function automatic void process_bank_commands(
         input int unsigned p,
         ref mem_queue_params_in_t [BANKS-1:0] params_in,
@@ -326,7 +329,7 @@ module request_scheduler #(
                 col_out_t = top.col;
                 
                 if (p == 1) begin
-                    val_out_t = top.val_in;
+                    val_out_t = top.val_in;//not bursting??
                 end else if (p == 2) begin
                     bank_state_params_in.activate = bank_state_params_out.active_bank;
                     bank_state_params_in.activate[i] = 1'b1;
@@ -337,7 +340,7 @@ module request_scheduler #(
                     bank_state_params_in.precharge[i] = 1'b1;
                     val_out_t = 'b0;
                 end else begin
-                    val_out_t = 'b0;
+                    val_out_t = 'b0;//
                 end
                 
                 bank_out_t = top.bank;
@@ -580,23 +583,42 @@ module request_scheduler #(
         end
         if (cmd_ready) begin
             // Update params array
-            process_bank_commands(
-                0,
-                read_params_in,
-                read_params_out,
-                bank_state_params_in,
-                bank_state,
-                cmds,
-                done,
-                valid_out_t,
-                cmd_out_t,
-                row_out_t,
-                col_out_t,
-                val_out_t,
-                bank_out_t,
-                bank_group_out_t
-            );
-            if (!done) begin
+            if (!ready_empty_out && read_params_out.ready_top_out.cycle_count > write_params_out.ready_top_out.cycle_count && read_params_out.cycle_count < cycle_counter) begin
+                process_bank_commands(
+                    0,
+                    read_params_in,
+                    read_params_out,
+                    bank_state_params_in,
+                    bank_state,
+                    cmds,
+                    done,
+                    valid_out_t,
+                    cmd_out_t,
+                    row_out_t,
+                    col_out_t,
+                    val_out_t,
+                    bank_out_t,
+                    bank_group_out_t
+                );
+                if (!done) begin
+                    process_bank_commands(
+                        1,
+                        write_params_in,
+                        write_params_out,
+                        bank_state_params_in,
+                        bank_state,
+                        cmds,
+                        done,
+                        valid_out_t,
+                        cmd_out_t,
+                        row_out_t,
+                        col_out_t,
+                        val_out_t,
+                        bank_out_t,
+                        bank_group_out_t
+                    );
+                end
+            end else if (!bursting)begin
                 process_bank_commands(
                     1,
                     write_params_in,
@@ -613,42 +635,60 @@ module request_scheduler #(
                     bank_out_t,
                     bank_group_out_t
                 );
-            end
-            if (!done) begin
-                process_bank_commands(
-                    2,
-                    activation_params_in,
-                    activation_params_out,
-                    bank_state_params_in,
-                    bank_state,
-                    cmds,
-                    done,
-                    valid_out_t,
-                    cmd_out_t,
-                    row_out_t,
-                    col_out_t,
-                    val_out_t,
-                    bank_out_t,
-                    bank_group_out_t
-                );
-            end
-            if (!done) begin
-                process_bank_commands(
-                    3,
-                    precharge_params_in,
-                    precharge_params_out,
-                    bank_state_params_in,
-                    bank_state,
-                    cmds,
-                    done,
-                    valid_out_t,
-                    cmd_out_t,
-                    row_out_t,
-                    col_out_t,
-                    val_out_t,
-                    bank_out_t,
-                    bank_group_out_t
-                );
+                if (!done) begin
+                    process_bank_commands(
+                        0,
+                        read_params_in,
+                        read_params_out,
+                        bank_state_params_in,
+                        bank_state,
+                        cmds,
+                        done,
+                        valid_out_t,
+                        cmd_out_t,
+                        row_out_t,
+                        col_out_t,
+                        val_out_t,
+                        bank_out_t,
+                        bank_group_out_t
+                    );
+                end
+                if (!done) begin
+                    process_bank_commands(
+                        2,
+                        activation_params_in,
+                        activation_params_out,
+                        bank_state_params_in,
+                        bank_state,
+                        cmds,
+                        done,
+                        valid_out_t,
+                        cmd_out_t,
+                        row_out_t,
+                        col_out_t,
+                        val_out_t,
+                        bank_out_t,
+                        bank_group_out_t
+                    );
+                end
+                if (!done) begin
+                    process_bank_commands(
+                        3,
+                        precharge_params_in,
+                        precharge_params_out,
+                        bank_state_params_in,
+                        bank_state,
+                        cmds,
+                        done,
+                        valid_out_t,
+                        cmd_out_t,
+                        row_out_t,
+                        col_out_t,
+                        val_out_t,
+                        bank_out_t,
+                        bank_group_out_t
+                    );
+                end
             end
         end
     end

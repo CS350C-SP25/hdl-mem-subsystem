@@ -321,6 +321,20 @@ module ddr4_sdram_controller #(
     // Inouts to DDR4 SDRAM
     inout logic [63:0] dqs  // Data ins/outs from all dram chips
 );
+
+    assign dqm_out = '0;
+
+    typedef enum logic [3:0] {
+        IDLE,
+        ROW_ACT,
+        COL_ACT,
+        READING,
+        WRITING,
+        PRECHARGING,
+        REFRESHING,
+        INIT
+    } sdram_state_t;
+
     // TODO: add functionality for chip select?
 
     logic mem_bus_ready, mem_bus_valid;
@@ -934,32 +948,23 @@ endmodule: request_scheduler
 module address_parser #(
     parameter int ROW_BITS = 8,  // log2(ROWS)
     parameter int COL_BITS = 4,  // log2(COLS)
-    parameter int BANK_GROUPS = 8,
-    parameter int BANKS = 8,  // banks per group
     parameter int PADDR_BITS = 19
 ) (
     input  logic [PADDR_BITS-1:0] mem_bus_addr_in,
-    output  logic [16:0] addr_out,  // [row][col]. Needs two cycles.
+    output logic [ROW_BITS-1:0] row_out,
+    output logic [COL_BITS-1:0] col_out,
     output logic [1:0] bg_out,     // Bank group id
     output logic [1:0] ba_out      // Bank id
 );
-
-    localparam int buffer_bits = 17 - ROW_BITS - COL_BITS; // Assumed (row_bits + col_bits) <= 17. 
 
     // Address mapping strategy:
     // Lower bits: Column address (for row buffer locality)
     // Middle bits: Bank/Bank Group (for parallelism)
     // Upper bits: Row address
-    // Any remaining bits are zeroed out. This is to preserve a one-to-one mapping of cache to DRAM and
-    // avoid the hassle of interweaving.
-
-    
-    logic [ROW_BITS-1:0] row;
-    logic [COL_BITS-1:0] col;
 
     always_comb begin
         // Extract column bits (lowest order)
-        col = mem_bus_addr_in[COL_BITS-1:0];
+        col_out = mem_bus_addr_in[COL_BITS-1:0];
         
         // It is assumed that the # of bank groups AND # of banks
         //  per group are 4, since they each take 2 bits to index into
@@ -968,22 +973,7 @@ module address_parser #(
         
         // Row address takes the remaining upper bits
         // Note: We might not use all available row bits
-        row = mem_bus_addr_in[COL_BITS + 4 + ROW_BITS - 1:COL_BITS+4];
-        
-        addr_out = {{(buffer_bits){1'b0}}, row, col}; // most significant bits ignored by the DRAM row
-                                                    //  address selector if row_bits + col_bits < 17
-
-    end
-
-    // Assertions for parameter checking
-    initial begin
-        // Verify that we have enough input address bits
-        assert (PADDR_BITS > (COL_BITS + 2 + 2))
-        else $error("Input address bits insufficient for minimum addressing");
-
-        assert (ROW_BITS + COL_BITS <= 17)
-        else $error("Row and column bits are too much for the 17-bit address out");
-    
+        row_out = mem_bus_addr_in[COL_BITS + 4 + ROW_BITS - 1:COL_BITS+4];
     end
 
 endmodule
@@ -1058,6 +1048,52 @@ module command_clb #(
         end
 
     end
+
+endmodule
+
+
+// Module to send commands to DIMM and receive responses
+module command_sender #(
+    parameter int CAS_LATENCY = 22,
+    parameter int BANK_GROUPS = 8,
+    parameter int BANKS_PER_GROUP = 8,       // banks per group
+    parameter int ROW_BITS = 8,    // bits to address rows
+    parameter int COL_BITS = 4     // bits to address columns
+) (
+    input logic clk_in,
+    input logic [$clog2(BANK_GROUPS)-1:0] bank_group_in,
+    input logic [$clog2(BANKS_PER_GROUP)-1:0] bank_in,
+    input logic [ROW_BITS-1:0] row_in,
+    input logic [COL_BITS-1:0] col_in,
+    input logic valid_in, // if not valid ignore
+    input logic write_in, // if val is ok to write (basically write request)
+    input logic [63:0] val_in, // val to write if write
+
+    output logic [$clog2(BANK_GROUPS)-1:0] bank_group_out,
+    output logic [$clog2(BANKS_PER_GROUP)-1:0] bank_out,
+    output logic act_out, // Command bit
+    output logic [16:0] dram_addr_out,  // row/col or special bits.
+    output logic [63:0] val_out,
+    output logic receiving_burst, // set to HI when receiving a response from the DIMM
+    inout logic [63:0] mem_bus_value_io  // Load / Store value for memory module
+);
+    
+    // Receive command from scheduler (valid_in is 1) (CLB)
+
+
+    // Put command in queue (in case we have to wait for a response before issuing this command) (CLB)
+
+
+    // Check pending command queue if there is data we're receiving this clock cycle (CLB)
+
+
+    // If we're receiving data from the DIMM this cycle, receive it
+
+
+    // If we're not receiving data NEXT cycle, stage data 
+
+
+    // Update waiting times of pending commands
 
 endmodule
 
