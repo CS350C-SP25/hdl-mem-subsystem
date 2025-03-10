@@ -323,6 +323,7 @@ module request_scheduler #(
         end
         assign read_prio = |read_prio_out;
     endgenerate
+    logic[31:0] last_read;
     always_comb begin
         done = 1'b0;
         valid_out_t = 1'b0;
@@ -384,27 +385,11 @@ module request_scheduler #(
         if (cmd_ready) begin
             // Update params array
             if (read_prio) begin
-                process_bank_commands(
-                    0,
-                    read_params_in,
-                    read_params_out,
-                    bank_state_params_in,
-                    bank_state,
-                    cmds,
-                    done,
-                    valid_out_t,
-                    cmd_out_t,
-                    row_out_t,
-                    col_out_t,
-                    val_out_t,
-                    bank_out_t,
-                    bank_group_out_t
-                );
-                if (!done) begin
+                if (last_read < cycle_counter - 4) begin
                     process_bank_commands(
-                        1,
-                        write_params_in,
-                        write_params_out,
+                        0,
+                        read_params_in,
+                        read_params_out,
                         bank_state_params_in,
                         bank_state,
                         cmds,
@@ -417,6 +402,7 @@ module request_scheduler #(
                         bank_out_t,
                         bank_group_out_t
                     );
+                    last_read = cycle_counter;
                 end
             end else begin // if (!bursting)begin
                 process_bank_commands(
@@ -435,24 +421,6 @@ module request_scheduler #(
                     bank_out_t,
                     bank_group_out_t
                 );
-                if (!done) begin
-                    process_bank_commands(
-                        0,
-                        read_params_in,
-                        read_params_out,
-                        bank_state_params_in,
-                        bank_state,
-                        cmds,
-                        done,
-                        valid_out_t,
-                        cmd_out_t,
-                        row_out_t,
-                        col_out_t,
-                        val_out_t,
-                        bank_out_t,
-                        bank_group_out_t
-                    );
-                end
                 if (!done) begin
                     process_bank_commands(
                         2,

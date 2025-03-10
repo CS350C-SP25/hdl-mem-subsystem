@@ -536,25 +536,28 @@ module command_sender #(
     input logic [COL_BITS-1:0] col_in,
     input logic valid_in, // if not valid ignore
     input logic write_in, // if val is ok to write (basically write request)
-    input logic [63:0] val_in, // val to write if write
-    input logic [2:0] cmd_in
+    input logic [7:0][63:0] val_in, // val to write if write
+    input logic [2:0] cmd_in,
 
     output logic [$clog2(BANK_GROUPS)-1:0] bank_group_out,
     output logic [$clog2(BANKS_PER_GROUP)-1:0] bank_out,
     output logic act_out, // Command bit
     output logic [16:0] dram_addr_out,  // row/col or special bits.
-    output logic [63:0] val_out,
+    output logic [7:0][63:0] val_out,
     output logic bursting, // set to HI when receiving/sending a burst to/from the DIMM
     inout logic [63:0] mem_bus_value_io  // Load / Store value for memory module
 );
     
     // Trust the scheduler to not send commands that conflict with incoming data
     logic [31:0] counter;
+    logic [4:0] cycle_counter;
 
     // Commands enum
     typedef enum logic[2:0] {
         READ = 3'b000,
-        WRITE = 3'b001
+        WRITE = 3'b001,
+        ACTIVATE = 3'b010,
+        PRECHARGE = 3'b011
     } commands;
 
     // Module for queueing memory requests
@@ -587,7 +590,7 @@ module command_sender #(
         .empty(empty),
         .full(full)
     ) read_queue;
-    
+    logic read_burst_ready;
     // Check if command from scheduler is valid
     if (valid_in) begin
         // Accept command from scheduler (CLB)
@@ -607,12 +610,25 @@ module command_sender #(
         // If the command is a Read, put it in the read queue. Remember the time the command is supposed to finish
         if (cmd_in == READ) begin
             // TODO: Add (counter + CAS_LATENCY) to queue also check if this is off by one
+            //wait CAS_LATENCY-1 cycles then set bursting to true
+            cycle_counter = 22;
+
         end
 
         // If the command is a Write, begin bursting
         if (cmd_in == WRITE) begin
             // TODO: consult DIMM code for how to burst Write
             // Remember to set bursting to 1
+            bursting = 1'b1;
+        end
+        //oops this needs to be clocked on posedge
+        if (awaiting_read) begin
+            if (cycle_counter == 0) begin
+                bursting = 1'b1;
+                read_burst_ready = 1'b1;
+            end else begin
+
+            end
         end
 
     end else begin
@@ -625,6 +641,8 @@ module command_sender #(
     end
 
     // Increment counter
+    logic read_bursting;
+    logic write_bursting;
     always_ff @(posedge reset or posedge clk)
         if (reset) begin
             counter <= '0;
@@ -634,9 +652,20 @@ module command_sender #(
             // TODO: clear req_in too?
 
         end else begin
-            counter <= counter + 1;
-
+            if (read_burst_ready) begin
+                read_bursting <= 1'b1;
+            end else if (read_bursting) begin
+                val_out[counter] = mem_bus_value_io;
+                counter <= counter == 7 ? 0 : counter + 1;
+                read_burst_ready <= counter != 7;
+                read_bursting <= counter != 7;
+            end else if ((cmd_in == WRITE && valid_in) || write_bursting) begin
+                counter <= counter == 7 ? 0 : counter + 1;
+                write_bursting <= counter != 7;
+            end else begin
+                counter = 1'b0;
+            end
         end
-
+        assign mem_bus_value_io = ((cmd_in == WRITE && valid_in) || write_bursting) ? val_in[counter] : {(63){1'bz}};
 endmodule
 
