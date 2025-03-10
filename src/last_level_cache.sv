@@ -411,30 +411,6 @@ module ddr4_sdram_controller #(
 
 endmodule : ddr4_sdram_controller
 
-
-// adjust refresh param based on the actual clock, currently assuming 1 GHz clock => 64 ms = 64,000,000 ns
-module autorefresh #(
-    parameter int REFRESH = 64_000_000
-) (
-    input logic clk_in,
-    input logic rst_in,
-    output logic refresh
-);
-    localparam WIDTH = $clog2(REFRESH)
-    logic [WIDTH-1:0] count;
-    always_ff @(posedge clk or posedge rst_in) begin
-        if (rst_in) begin
-            count <= 0;
-            refresh <= 0;
-        end else if (count == REFRESH - 1) begin
-            count <= 0;
-            refresh <= ~refresh;
-        end else begin
-            count <= count + 1;
-        end
-    end 
-endmodule : autorefreshr
-
 module address_parser #(
     parameter int ROW_BITS = 8,  // log2(ROWS)
     parameter int COL_BITS = 4,  // log2(COLS)

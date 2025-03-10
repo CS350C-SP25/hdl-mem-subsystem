@@ -22,11 +22,11 @@ VFLAGS = --binary -j $$(( `nproc` - 1 )) --trace
 
 # Source files
 DIMM_SRCS = --cc src/ddr4_dimm.sv --exe src/dimm_tb2.cpp
-SCHEDULER_SRCS = --cc src/mem_scheduler.sv src/testbenches/mem_scheduler_tb.sv
+SCHEDULER_SRCS = --cc src/mem_control/mem_scheduler.sv src/mem_control/bank_state.sv src/mem_control/req_queue.sv src/testbenches/mem_scheduler_tb.sv
 
 # Output binaries
 DIMM_BIN = obj_dir/Vddr4_dimm
-SCHEDULER_BIN = obj_dir/Vmem_scheduler_tb
+SCHEDULER_BIN = obj_dir/Vmem_scheduler
 
 # Default target (alias for dimm)
 all: dimm
@@ -54,6 +54,6 @@ clean-dimm:
 	rm -rf obj_dir/Vddr4_dimm *.log *.dmp *.vcd
 
 clean-scheduler:
-	rm -rf obj_dir/Vmem_scheduler_tb
+	rm -rf obj_dir/Vmem_scheduler
 
 .PHONY: all clean run dimm scheduler

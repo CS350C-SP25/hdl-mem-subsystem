@@ -9,14 +9,14 @@ module request_scheduler_tb;
     logic [4-1:0] col_in;                 // COL_BITS = 4
     logic valid_in;
     logic write_in;
-    logic [63:0] val_in;
+    logic [511:0] val_in;
     logic cmd_ready;
     
     logic [$clog2(8)-1:0] bank_group_out; // BANK_GROUPS = 8
     logic [$clog2(8)-1:0] bank_out;       // BANKS_PER_GROUP = 8
     logic [8-1:0] row_out;                // ROW_BITS = 8
     logic [4-1:0] col_out;                // COL_BITS = 4
-    logic [63:0] val_out;
+    logic [511:0] val_out;
     logic [2:0] cmd_out; 
     logic valid_out;
 
@@ -89,7 +89,7 @@ module request_scheduler_tb;
         bank_in = 2;
         row_in = 8'b01010101;
         col_in = 4'b1010;
-        val_in = 64'hA5A5A5A5A5A5A5A5;
+        val_in = 512'hA5A5A5A5A5A5A5A5;
         cmd_ready = 1;  // Controller is ready
         #10;
         valid_in = 0;  // Deassert valid_in
