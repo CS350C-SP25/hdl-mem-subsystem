@@ -21,23 +21,39 @@ VERILATOR ?= /u/nate/verilator
 VFLAGS = --binary -j $$(( `nproc` - 1 )) --trace 
 
 # Source files
-SRCS = --cc src/ddr4_dimm.sv --exe src/dimm_tb2.cpp
+DIMM_SRCS = --cc src/ddr4_dimm.sv --exe src/dimm_tb2.cpp
+SCHEDULER_SRCS = --cc src/mem_scheduler.sv src/testbenches/mem_scheduler_tb.sv
 
-# Output binary
-BIN = obj_dir/Vddr4_dimm
+# Output binaries
+DIMM_BIN = obj_dir/Vddr4_dimm
+SCHEDULER_BIN = obj_dir/Vmem_scheduler_tb
 
-# Run the verilog simulation
-run: clean $(BIN)
-	./$(BIN)
+# Default target (alias for dimm)
+all: dimm
+
+# Compile and run for DIMM
+dimm: $(DIMM_BIN)
+	./$(DIMM_BIN)
+
+# Compile and run for Scheduler
+scheduler: $(SCHEDULER_BIN)
+	./$(SCHEDULER_BIN)
 
 # Compile with Verilator
-$(BIN):
-	$(OBJCACHE) $(VERILATOR) $(VFLAGS) $(SRCS)
+$(DIMM_BIN):
+	$(OBJCACHE) $(VERILATOR) $(VFLAGS) $(DIMM_SRCS)
 
-
+$(SCHEDULER_BIN):
+	$(OBJCACHE) $(VERILATOR) $(VFLAGS) $(SCHEDULER_SRCS)
 
 # Clean generated files
 clean:
-	rm -rf obj_dir $(BIN) *.log *.dmp
+	rm -rf obj_dir $(DIMM_BIN) $(SCHEDULER_BIN) *.log *.dmp *.vcd
 
-.PHONY: all clean run
+clean-dimm:
+	rm -rf obj_dir/Vddr4_dimm *.log *.dmp *.vcd
+
+clean-scheduler:
+	rm -rf obj_dir/Vmem_scheduler_tb
+
+.PHONY: all clean run dimm scheduler

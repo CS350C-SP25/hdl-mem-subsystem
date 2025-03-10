@@ -43,7 +43,7 @@ module mem_req_queue #(
         if (dequeue_in && !empty) begin
             next_size = size - 1;
             next_head = (head + 4'b1) & {$clog2(QUEUE_SIZE){1'b1}}; // % QUEUE_SIZE
-            $display("dequeuing \n");
+            // $display("dequeuing \n");
         end
     end
     // Full & Empty Flags
@@ -93,13 +93,19 @@ module mem_cmd_queue #(
         .clk_in(clk_in), 
         .rst_in(rst_in), 
         .enqueue_in(transfer_ready), 
-        .dequeue_in(promote_ready), 
+        .dequeue_in(promote_ready & promote), 
         .req_in(ready_top), 
         .cycle_count(cycle_count), 
         .req_out(pending_top), 
         .empty(pending_empty), 
         .full(pending_full)
     );
+
+    // always_comb begin
+    //     if (transfer_ready) begin
+    //         $display("Transfer ready");
+    //     end
+    // end
 
     // **Output assignments**
     assign ready_top_out = ready_top;
@@ -209,7 +215,7 @@ module request_scheduler #(
     input logic write_in, // if val is ok to write (basically write request)
     input logic [63:0] val_in, // val to write if write
     input logic cmd_ready, // is controller ready to receive command
-    input logic bursting,
+    // input logic bursting,
 
     output logic [$clog2(BANK_GROUPS)-1:0] bank_group_out,
     output logic [$clog2(BANKS_PER_GROUP)-1:0] bank_out,
@@ -219,7 +225,6 @@ module request_scheduler #(
     output logic [2:0] cmd_out, // 0 is read, 1 is write, 2 is activate, 3 is precharge; if valid_out is 0 then block
     output logic valid_out
 );
-    command_sender dsahj ();
     typedef struct packed {
         logic [$clog2(BANK_GROUPS)-1:0] bank_group;
         logic [$clog2(BANKS_PER_GROUP)-1:0] bank;
@@ -311,10 +316,10 @@ module request_scheduler #(
             if (!params_out[i].ready_empty_out && 
                 !bank_state_params_out.blocked[i[$clog2(BANKS)-1:0]] && 
                 (p == 2 || p == 3 || 
-                params_out[i].ready_top_out.row == bank_state_params_out.active_row_out[i[$clog2(BANKS)-1:0]])) begin
+                params_out[i].ready_top_out.row == bank_state_params_out.active_row_out[i[$clog2(BANKS)-1:0]].row_out)) begin
                 
                 mem_request_t top = params_out[i].ready_top_out;
-                $display("considering cmd %d for p %d and bank idx %d", cmds[p], p, i);
+                // $display("considering cmd %d for p %d, bank idx %d and row %b", cmds[p], p, i, top.row);
                 
                 done = 1'b1;
                 valid_out_t = 1'b1;
@@ -487,7 +492,6 @@ module request_scheduler #(
             val_out <= '0;
             bank_out <= '0;
             bank_group_out <= '0;
-            $display("Precharge Queue 6 empty: %b", precharge_params_out[26].ready_empty_out);
         end else begin
             cycle_counter <= cycle_counter + 1;
             bank_group_out <= bank_group_out_t;
@@ -497,8 +501,10 @@ module request_scheduler #(
             val_out <= val_out_t;
             cmd_out <= cmd_out_t;
             valid_out <= valid_out_t;
-            $display("Precharge Queue 6 empty: %b", precharge_params_out[26].ready_empty_out);
-            $display("blocked %b", bank_state_params_out.blocked[26]);
+            // $display("Read Queue Ready Top %b", read_params_out[17].ready_top_out.row);
+            // $display("Activation Queue Pending Top %b", activation_params_out[17].pending_top_out.row);
+            // $display("Activation Queue Ready Top %b", activation_params_out[17].pending_top_out.row);
+            // $display("bank state active row out for bank idx 17: %b", bank_state_params_out.active_row_out[17].row_out);
         end
     end
 
@@ -516,6 +522,14 @@ module request_scheduler #(
         logic incoming; // if theres an incoming request into the scheduler and it needs to be placed in the queue, it takes priority over a promotion
     } mem_queue_params;
     */
+    logic read_prio;
+    generate
+        logic[BANKS-1:0] read_prio_out;
+        for (genvar i = 0; i < BANKS; i++) begin
+            assign read_prio_out[i] = !read_params_out[i].ready_empty_out && read_params_out[i].ready_top_out.cycle_count > write_params_out[i].ready_top_out.cycle_count && read_params_out[i].ready_top_out.cycle_count < cycle_counter;
+        end
+        assign read_prio = |read_prio_out;
+    endgenerate
     always_comb begin
         done = 1'b0;
         valid_out_t = 1'b0;
@@ -551,13 +565,13 @@ module request_scheduler #(
             // Queue selection logic
             if (bank_state_params_out.ready_to_access[bank_idx]) begin
                 // Precharged but not activated
-                $display("adding to activation queue idx %d\n", bank_idx);
+                // $display("adding to activation queue idx %d\n", bank_idx);
                 activation_params_in[bank_idx].enqueue_in = 1'b1;
                 activation_params_in[bank_idx].incoming = 1'b1;
                 activation_params_in[bank_idx].req_in = incoming_req;
             end else if (bank_state_params_out.active_bank[bank_idx] && 
                         bank_state_params_out.active_row_out[bank_idx] == row_in) begin
-                $display("adding to r/w queue\n");
+                // $display("adding to r/w queue\n");
                 // Active bank, put in respective queue
                 if (write_in) begin
                     write_params_in[bank_idx].enqueue_in = 1'b1;
@@ -569,14 +583,14 @@ module request_scheduler #(
                     read_params_in[bank_idx].req_in = incoming_req;
                 end
             end else begin
-                $display("adding to precharge queue %d\n", incoming_req.bank_group * incoming_req.bank);
+                // $display("adding to precharge queue %d\n", incoming_req.bank_group * incoming_req.bank);
                 precharge_params_in[bank_idx].enqueue_in = 1'b1;
                 precharge_params_in[bank_idx].req_in = incoming_req;
             end
         end
         if (cmd_ready) begin
             // Update params array
-            if (!ready_empty_out && read_params_out.ready_top_out.cycle_count > write_params_out.ready_top_out.cycle_count && read_params_out.cycle_count < cycle_counter) begin
+            if (read_prio) begin
                 process_bank_commands(
                     0,
                     read_params_in,
@@ -611,7 +625,7 @@ module request_scheduler #(
                         bank_group_out_t
                     );
                 end
-            end else if (!bursting)begin
+            end else begin // if (!bursting)begin
                 process_bank_commands(
                     1,
                     write_params_in,

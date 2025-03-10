@@ -1,3 +1,17 @@
+# HDL Implementation for a Memory Subsystem
+
+This is a project undertaken by students taking CS350C, an undergraduate advanced computer architecture course offered by the University of Texas at Austin. 
+It attempts to implement a simple memory subsystem at the register transistor level from 
+DIMM, SDRAM Controller, L1D Cache, to L/S Unit. 
+
+# DIMM
+
+This implementation uses the DDR4 standard. For simplicity, we do not consider rank of chips on the DIMM. 
+
+# SDRAM Controller
+
+The SDRAM controller roughly implements the FR-FCFS paper. [Rixner 2004]
+
 # ACA DMEM Assignment ideology
 
 This README contains miscellaneous information and documentation about
