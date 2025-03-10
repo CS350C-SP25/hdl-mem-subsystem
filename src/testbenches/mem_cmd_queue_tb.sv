@@ -36,10 +36,12 @@ module mem_req_queue #(
         next_head = head;
         
         if (enqueue_in && !full) begin
+            $display("Enqueue in \n");
             next_queue[(head + size) % QUEUE_SIZE] = req_in;
             next_size = size + 1;
         end
         if (dequeue_in && !empty) begin
+            $display("Dequeue in \n");
             next_size = size - 1;
             next_head = (head + 4'b1) & {$clog2(QUEUE_SIZE){1'b1}}; // % QUEUE_SIZE
         end
@@ -91,7 +93,7 @@ module mem_cmd_queue #(
         .clk_in(clk_in), 
         .rst_in(rst_in), 
         .enqueue_in(transfer_ready), 
-        .dequeue_in(promote_ready), 
+        .dequeue_in(promote & promote_ready), 
         .req_in(ready_top), 
         .cycle_count(cycle_count), 
         .req_out(pending_top), 
@@ -134,6 +136,10 @@ module tb_mem_cmd_queue;
     logic promote_ready;
     logic [31:0] cycle_count;
     mem_request_t req_in;
+    logic enqueue_in_1;
+    logic transfer_ready_1;
+    logic promote_ready_1;
+    mem_request_t req_in_1;
 
     // Outputs
     mem_request_t ready_top_out;
@@ -142,12 +148,18 @@ module tb_mem_cmd_queue;
     logic pending_empty_out;
     logic promote;
 
+    mem_request_t ready_top_out_1;
+    mem_request_t pending_top_out_1;
+    logic ready_empty_out_1;
+    logic pending_empty_out_1;
+    logic promote_1;
+
     // Instantiate the mem_cmd_queue module
     mem_cmd_queue #(
         .QUEUE_SIZE(QUEUE_SIZE),
         .LATENCY(LATENCY),
         .mem_request_t(mem_request_t)
-    ) uut (
+    ) uut1 (
         .clk_in(clk_in),
         .rst_in(rst_in),
         .enqueue_in(enqueue_in),
@@ -160,6 +172,25 @@ module tb_mem_cmd_queue;
         .ready_empty_out(ready_empty_out),
         .pending_empty_out(pending_empty_out),
         .promote(promote)
+    );
+
+    mem_cmd_queue #(
+        .QUEUE_SIZE(QUEUE_SIZE),
+        .LATENCY(LATENCY),
+        .mem_request_t(mem_request_t)
+    ) uut2 (
+        .clk_in(clk_in),
+        .rst_in(rst_in),
+        .enqueue_in(promote & promote_ready),
+        .transfer_ready(transfer_ready_1),
+        .req_in(pending_top_out),
+        .cycle_count(cycle_count),
+        .promote_ready(promote_ready_1),
+        .ready_top_out(ready_top_out_1),
+        .pending_top_out(pending_top_out_1),
+        .ready_empty_out(ready_empty_out_1),
+        .pending_empty_out(pending_empty_out_1),
+        .promote(promote_1)
     );
 
     // Clock Generation
@@ -185,6 +216,19 @@ module tb_mem_cmd_queue;
         req_in.cycle_count = '0;
         req_in.write = '0;    
         req_in.valid = '0;  
+        
+        enqueue_in_1 = 0;
+        transfer_ready_1 = 0;
+        promote_ready_1 = 0;
+        req_in_1.bank_group = '0;  // example initial request
+        req_in_1.bank = '0;
+        req_in_1.row = '0; 
+        req_in_1.col = '0;
+        req_in_1.val_in = '0;
+        req_in_1.state = '0; 
+        req_in_1.cycle_count = '0;
+        req_in_1.write = '0;    
+        req_in_1.valid = '0;  
         #10;
 
         // Reset the system
@@ -209,29 +253,38 @@ module tb_mem_cmd_queue;
         #10;  // Wait for a clock cycle
         enqueue_in = 0;
         transfer_ready = 1;
-        $display("ready_top_out=%h, pending_top_out=%h, ready_empty_out=%h, pending_empty_out=%h, promote=%h\n",
-                 ready_top_out.val_in, pending_top_out.val_in, ready_empty_out, pending_empty_out, promote);
+        $display("ready_top_out=%h, pending_top_out=%h, ready_empty_out=%h, pending_empty_out=%h, promote=%h, ready_empty_out_1=%h, ready_top_out_1=%h\n", 
+                  ready_top_out.val_in, pending_top_out.val_in, ready_empty_out, pending_empty_out, 
+                  promote, ready_empty_out_1, ready_top_out_1);
         #10;
         transfer_ready = 0;
         
         // Test Case 2: Transfer and promotion
         cycle_count = 10;
         promote_ready = 1;
-        $display("ready_top_out=%h, pending_top_out=%h, ready_empty_out=%h, pending_empty_out=%h, promote=%h\n",
-                 ready_top_out.val_in, pending_top_out.val_in, ready_empty_out, pending_empty_out, promote);
+        $display("ready_top_out=%h, pending_top_out=%h, ready_empty_out=%h, pending_empty_out=%h, promote=%h, ready_empty_out_1=%h, ready_top_out_1=%h\n", 
+                  ready_top_out.val_in, pending_top_out.val_in, ready_empty_out, pending_empty_out, 
+                  promote, ready_empty_out_1, ready_top_out_1);
         #10;
-        promote_ready = 0;
-        $display("ready_top_out=%h, pending_top_out=%h, ready_empty_out=%h, pending_empty_out=%h, promote=%h\n",
-                 ready_top_out.val_in, pending_top_out.val_in, ready_empty_out, pending_empty_out, promote);
+        // promote_ready = 0;
+        $display("ready_top_out=%h, pending_top_out=%h, ready_empty_out=%h, pending_empty_out=%h, promote=%h, ready_empty_out_1=%h, ready_top_out_1=%h\n", 
+                  ready_top_out.val_in, pending_top_out.val_in, ready_empty_out, pending_empty_out, 
+                  promote, ready_empty_out_1, ready_top_out_1);
         
         // Test Case 3: Simulate promotion logic
         cycle_count = 15;  // After the latency
         #10;
+        $display("ready_top_out=%h, pending_top_out=%h, ready_empty_out=%h, pending_empty_out=%h, promote=%h, ready_empty_out_1=%h, ready_top_out_1=%h\n", 
+                  ready_top_out.val_in, pending_top_out.val_in, ready_empty_out, pending_empty_out, 
+                  promote, ready_empty_out_1, ready_top_out_1);
+        #10;
         
         // Check values
         $display("ready_top_out: %h", ready_top_out);
+        $display("ready_top_out_1: %h", ready_top_out_1);
         $display("pending_top_out: %h", pending_top_out);
         $display("ready_empty_out: %b", ready_empty_out);
+        $display("ready_empty_out_1: %h", ready_empty_out_1);
         $display("pending_empty_out: %b", pending_empty_out);
         $display("promote: %b", promote);
 

@@ -93,13 +93,19 @@ module mem_cmd_queue #(
         .clk_in(clk_in), 
         .rst_in(rst_in), 
         .enqueue_in(transfer_ready), 
-        .dequeue_in(promote_ready), 
+        .dequeue_in(promote_ready & promote), 
         .req_in(ready_top), 
         .cycle_count(cycle_count), 
         .req_out(pending_top), 
         .empty(pending_empty), 
         .full(pending_full)
     );
+
+    always_comb begin
+        if (transfer_ready) begin
+            $display("Transfer ready");
+        end
+    end
 
     // **Output assignments**
     assign ready_top_out = ready_top;
@@ -308,10 +314,10 @@ module request_scheduler #(
             if (!params_out[i].ready_empty_out && 
                 !bank_state_params_out.blocked[i[$clog2(BANKS)-1:0]] && 
                 (p == 2 || p == 3 || 
-                params_out[i].ready_top_out.row == bank_state_params_out.active_row_out[i[$clog2(BANKS)-1:0]])) begin
+                params_out[i].ready_top_out.row == bank_state_params_out.active_row_out[i[$clog2(BANKS)-1:0]].row_out)) begin
                 
                 mem_request_t top = params_out[i].ready_top_out;
-                $display("considering cmd %d for p %d and bank idx %d", cmds[p], p, i);
+                $display("considering cmd %d for p %d, bank idx %d and row %b", cmds[p], p, i, top.row);
                 
                 done = 1'b1;
                 valid_out_t = 1'b1;
@@ -484,7 +490,6 @@ module request_scheduler #(
             val_out <= '0;
             bank_out <= '0;
             bank_group_out <= '0;
-            $display("Precharge Queue 6 empty: %b", precharge_params_out[26].ready_empty_out);
         end else begin
             cycle_counter <= cycle_counter + 1;
             bank_group_out <= bank_group_out_t;
@@ -494,8 +499,10 @@ module request_scheduler #(
             val_out <= val_out_t;
             cmd_out <= cmd_out_t;
             valid_out <= valid_out_t;
-            $display("Precharge Queue 6 empty: %b", precharge_params_out[26].ready_empty_out);
-            $display("blocked %b", bank_state_params_out.blocked[26]);
+            $display("Read Queue Ready Top %b", read_params_out[17].ready_top_out.row);
+            $display("Activation Queue Pending Top %b", activation_params_out[17].pending_top_out.row);
+            $display("Activation Queue Ready Top %b", activation_params_out[17].pending_top_out.row);
+            $display("bank state active row out for bank idx 17: %b", bank_state_params_out.active_row_out[17].row_out);
         end
     end
 

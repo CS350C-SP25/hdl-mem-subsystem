@@ -84,7 +84,7 @@ module request_scheduler_tb;
         // Test Case 1: Write Request
         $display("Test Case 1: Write Request...");
         valid_in = 1;
-        write_in = 0;
+        write_in = 1;
         bank_group_in = 3;
         bank_in = 2;
         row_in = 8'b01010101;
