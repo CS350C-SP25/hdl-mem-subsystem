@@ -12,11 +12,7 @@ module request_scheduler #(
 ) (
     input logic clk_in,
     input logic rst_in,
-    // input logic [$clog2(BANK_GROUPS)-1:0] bank_group_in,
-    // input logic [$clog2(BANKS_PER_GROUP)-1:0] bank_in,
     input  logic [PADDR_BITS-1:0] mem_bus_addr_in,
-    // input logic [ROW_BITS-1:0] row_in,
-    // input logic [COL_BITS-1:0] col_in,
     input logic valid_in, // if not valid ignore
     input logic write_in, // if val is ok to write (basically write request)
     input logic [511:0] val_in, // val to write if write
