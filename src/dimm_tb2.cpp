@@ -54,19 +54,68 @@ void activate (unsigned bank_num, unsigned row, unsigned clock) {
     }
 }
 
-void write_command (bool pre, bitset<COL_BITS> col, bitset<3>, 
-                    vector<uint64_t>& a, vector<uint64_t>& b) {
-    
-    dut->bg_in = (bank_num[3]); 
-    dut->dqs_reg = (data_to_write[0]);
+void precharge (uint8_t bank_num) {
+    // assign bank group bits
+    dut->bg_in |= (bank_num & 0b1);
+    dut->ba_in |= ((bank_num & 0b110) >> 1);
+
+    // control signal assignments
     dut->cs_N_in = 0;
-    dut->
-    
+    dut->act_in = 1;
+
+    // reset address register
+    dut->addr_in = 0;
+
+    // set the specific address bits needed manually
+    dut->addr_in &= ~(1 << 16);
+    dut->addr_in |= (1 << 15);
+    dut->addr_in &= ~(1 << 14);
+
+    // set chip select
+    dut->cs_N_in = 1;
+
+    // zero out dqs reg
+   // dut->dqs_reg = 0;
 }
 
-void read_command () {
+void write_command (bool pre, bitset<COL_BITS> col, uint8_t bank_num ) {
+
     // Assigning bank group bits
-    dut->bg_in = (bank_num[3]);
+    dut->bg_in |= (bank_num & 0b1);
+    dut->ba_in |= ((bank_num & 0b110) >> 1);
+
+    // Control signal assignments
+    dut->cs_N_in = 0;
+    dut->act_in = 0;
+
+    // Reset address register
+    dut->addr_in = 0;
+
+    // Set the column address
+    dut->addr_in |= (col.to_ulong() & ((1 << COL_BITS) - 1));
+
+    // Setting specific bits manually
+    dut->addr_in |= (1 << 16);
+    dut->addr_in &= ~(1 << 15);
+    dut->addr_in &= ~(1 << 14);
+
+    // still need to do the actual data stuff here
+
+
+    //precharge
+    if (pre) {
+        dut->addr_in |= (1 << 10);
+    } else {
+        dut->addr_in &= ~(1 << 10);
+    }
+
+    dut->cs_N_in = 1;
+}
+
+void read_command (bool pre, bitset<COL_BITS> col, uint8_t bank_num) {
+    // Assigning bank group bits
+    dut->bg_in |= (bank_num & 0b1);
+    dut->ba_in |= ((bank_num & 0b110) >> 1);
 
     // Control signal assignments
     dut->cs_N_in = 0;
@@ -83,8 +132,8 @@ void read_command () {
     dut->addr_in &= ~(1 << 15);
     dut->addr_in |= (1 << 14);
 
-    //precharge 
-    if (pre[0]) {
+    //precharge
+    if (pre) {
         dut->addr_in |= (1 << 10);
     } else {
         dut->addr_in &= ~(1 << 10);
