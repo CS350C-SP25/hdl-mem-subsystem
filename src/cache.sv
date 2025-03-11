@@ -224,7 +224,7 @@ module cache #(
       node = (node << 1) + 1 + dir;
     end
 
-    return victim_way;
+    return victim_way == A ? victim_way - 1 : victim_way;
   endfunction
 
 
@@ -254,7 +254,6 @@ module cache #(
 
     case (cur_state)
       IDLE: begin
-        // // // $display("IDLE");
         next_state = (lc_valid_reg || hc_valid_reg) ? LOOKUP : IDLE;  // check hit or miss
         // only 1 direction can be ready at a time
         if (lc_valid_reg) begin
@@ -267,7 +266,6 @@ module cache #(
       end
 
       LOOKUP: begin
-        // $display("LOOKUP");
         for (int i = 0; i < A; i++) begin
           if (tag_array[i][cur_set].tag == cur_tag && tag_array[i][cur_set].valid) begin
             cur_hit = 1;
@@ -289,34 +287,13 @@ module cache #(
             next_state = RESPOND_HC;
           end
         end else begin
-          $display("we missed 🥀");
+          $display("[%0t] we missed 🥀", $time);
           changed_way = get_victim_way(plru_state[cur_set]);
           next_state  = SEND_LOWER_CACHE_REQ;
         end
-
-        // if (cur_hit) begin
-        //   plru_temp[cur_set] = update_plru(plru_state[cur_set], changed_way);
-
-        //   if (hc_we_reg) begin
-        //     next_state = WRITE_CACHE;
-        //   end else begin
-        //     next_state = RESPOND_HC;  // reading from HC
-        //   end
-        // end else begin
-        //   // missed, need to req from memory
-        //   changed_way = get_victim_way(plru_state[cur_set]);
-        //   // Check if victim is dirty
-        //   if (tag_array[changed_way][cur_set].valid && tag_array[changed_way][cur_set].dirty) begin
-        //     next_state = EVICT_BLOCK;
-        //   end else begin
-
-        //     next_state = SEND_LOWER_CACHE_REQ;
-        //   end
-        // end
       end
 
       SEND_LOWER_CACHE_REQ: begin
-        // $display("LOWER LEVEL CACHE REQ");
         lc_valid_comb = 1;  // set out to one, we are sending request
         lc_addr_out   = {hc_tag, hc_set, {BLOCK_OFFSET_BITS{1'b0}}};
         if (~lc_ready_reg) begin
@@ -332,6 +309,7 @@ module cache #(
       WRITE_CACHE: begin
         cache_temp[hit_way_reg][cur_set][cur_offset*8+:W] = cur_data;
         tag_temp[hit_way_reg][cur_set].valid = 1;
+        tag_temp[hit_way_reg][cur_set].tag = cur_tag;
         tag_temp[hit_way_reg][cur_set].dirty = lc_valid_reg ? 0 : 1; // only dirty if its a write from hc, not lc
 
         next_state = IDLE;
@@ -365,7 +343,6 @@ module cache #(
       end
 
       RESPOND_HC: begin  // send data to HC
-        // $display("RESPOND");
         for (int i = 0; i < A; i++) begin
           if (tag_array[i][cur_set].tag == cur_tag && tag_array[i][cur_set].valid) begin
             changed_way = i;
