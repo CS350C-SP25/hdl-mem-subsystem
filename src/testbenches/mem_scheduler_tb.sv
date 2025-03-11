@@ -1,10 +1,13 @@
 module request_scheduler_tb;
     parameter int PADDR_BITS = 19;
+    parameter int BANKS_PER_GROUP = 2;
+    parameter int BANK_GROUPS = 4;
     // Testbench signals
     logic clk_in;
     logic rst_in;
-    logic [$clog2(8)-1:0] bank_group_in;  // BANK_GROUPS = 8
-    logic [$clog2(8)-1:0] bank_in;        // BANKS_PER_GROUP = 8
+    logic [PADDR_BITS-1:0] mem_bus_addr_in;
+    logic [$clog2(BANK_GROUPS)-1:0] bank_group_in;  // BANK_GROUPS = 8
+    logic [$clog2(BANKS_PER_GROUP)-1:0] bank_in;        // BANKS_PER_GROUP = 8
     logic [8-1:0] row_in;                 // ROW_BITS = 8
     logic [4-1:0] col_in;                 // COL_BITS = 4
     logic valid_in;
@@ -13,8 +16,8 @@ module request_scheduler_tb;
     logic cmd_ready;
     
     logic [PADDR_BITS-1:0] addr_out;
-    logic [$clog2(8)-1:0] bank_group_out; // BANK_GROUPS = 8
-    logic [$clog2(8)-1:0] bank_out;       // BANKS_PER_GROUP = 8
+    logic [$clog2(BANK_GROUPS)-1:0] bank_group_out; // BANK_GROUPS = 8
+    logic [$clog2(BANKS_PER_GROUP)-1:0] bank_out;       // BANKS_PER_GROUP = 8
     logic [8-1:0] row_out;                // ROW_BITS = 8
     logic [4-1:0] col_out;                // COL_BITS = 4
     logic [511:0] val_out;
@@ -23,26 +26,20 @@ module request_scheduler_tb;
 
     // Instantiate the request_scheduler module
     request_scheduler #(
-        .A(8),
-        .B(64),
-        .C(16384),
         .BUS_WIDTH(16),
-        .BANK_GROUPS(8),
-        .BANKS_PER_GROUP(8),
+        .BANK_GROUPS(BANK_GROUPS),
+        .BANKS_PER_GROUP(BANKS_PER_GROUP),
         .ROW_BITS(8),
         .COL_BITS(4),
         .PADDR_BITS(PADDR_BITS),
         .QUEUE_SIZE(16),
         .ACTIVATION_LATENCY(8),
         .PRECHARGE_LATENCY(5),
-        .BANKS(64)
+        .BANKS(8)
     ) uut (
         .clk_in(clk_in),
         .rst_in(rst_in),
-        .bank_group_in(bank_group_in),
-        .bank_in(bank_in),
-        .row_in(row_in),
-        .col_in(col_in),
+        .mem_bus_addr_in(mem_bus_addr_in),
         .valid_in(valid_in),
         .write_in(write_in),
         .val_in(val_in),
@@ -89,7 +86,7 @@ module request_scheduler_tb;
         valid_in = 1;
         write_in = 1;
         bank_group_in = 3;
-        bank_in = 2;
+        bank_in = 1;
         row_in = 8'b01010101;
         col_in = 4'b1010;
         val_in = 512'hA5A5A5A5A5A5A5A5;
