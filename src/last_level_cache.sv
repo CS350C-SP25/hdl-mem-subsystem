@@ -413,39 +413,6 @@ module ddr4_sdram_controller #(
 
 endmodule : ddr4_sdram_controller
 
-module address_parser #(
-    parameter int ROW_BITS = 8,  // log2(ROWS)
-    parameter int COL_BITS = 4,  // log2(COLS)
-    parameter int PADDR_BITS = 19
-) (
-    input  logic [PADDR_BITS-1:0] mem_bus_addr_in,
-    output logic [ROW_BITS-1:0] row_out,
-    output logic [COL_BITS-1:0] col_out,
-    output logic [1:0] bg_out,     // Bank group id
-    output logic [1:0] ba_out      // Bank id
-);
-
-    // Address mapping strategy:
-    // Lower bits: Column address (for row buffer locality)
-    // Middle bits: Bank/Bank Group (for parallelism)
-    // Upper bits: Row address
-
-    always_comb begin
-        // Extract column bits (lowest order)
-        col_out = mem_bus_addr_in[COL_BITS-1:0];
-        
-        // It is assumed that the # of bank groups AND # of banks
-        //  per group are 4, since they each take 2 bits to index into
-        ba_out = mem_bus_addr_in[COL_BITS+1:COL_BITS];
-        bg_out = mem_bus_addr_in[COL_BITS+3:COL_BITS+2];
-        
-        // Row address takes the remaining upper bits
-        // Note: We might not use all available row bits
-        row_out = mem_bus_addr_in[COL_BITS + 4 + ROW_BITS - 1:COL_BITS+4];
-    end
-
-endmodule
-
 
 // CLB to assemble commands from scheduler for DIMM
 module command_clb #(

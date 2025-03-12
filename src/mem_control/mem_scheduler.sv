@@ -1,12 +1,10 @@
 module request_scheduler #(
-    parameter int A = 8,
-    parameter int B = 64,
-    parameter int C = 16384,
     parameter int BUS_WIDTH = 16,  // bus width per chip
-    parameter int BANK_GROUPS = 8,
-    parameter int BANKS_PER_GROUP = 8,       // banks per group
+    parameter int BANK_GROUPS = 4,
+    parameter int BANKS_PER_GROUP = 2,       // banks per group
     parameter int ROW_BITS = 8,    // bits to address rows
     parameter int COL_BITS = 4,     // bits to address columns
+    parameter int PADDR_BITS = 19,
     parameter int QUEUE_SIZE = 16, // set this, play around with it
     parameter int ACTIVATION_LATENCY = 8,
     parameter int PRECHARGE_LATENCY = 5, 
@@ -14,16 +12,13 @@ module request_scheduler #(
 ) (
     input logic clk_in,
     input logic rst_in,
-    input logic [$clog2(BANK_GROUPS)-1:0] bank_group_in,
-    input logic [$clog2(BANKS_PER_GROUP)-1:0] bank_in,
-    input logic [ROW_BITS-1:0] row_in,
-    input logic [COL_BITS-1:0] col_in,
+    input  logic [PADDR_BITS-1:0] mem_bus_addr_in,
     input logic valid_in, // if not valid ignore
     input logic write_in, // if val is ok to write (basically write request)
     input logic [511:0] val_in, // val to write if write
     input logic cmd_ready, // is controller ready to receive command
     // input logic bursting,
-
+    output logic [PADDR_BITS-1:0] addr_out,
     output logic [$clog2(BANK_GROUPS)-1:0] bank_group_out,
     output logic [$clog2(BANKS_PER_GROUP)-1:0] bank_out,
     output logic [ROW_BITS-1:0] row_out,
@@ -33,6 +28,7 @@ module request_scheduler #(
     output logic valid_out
 );
     typedef struct packed {
+        logic [PADDR_BITS-1:0] addr;
         logic [$clog2(BANK_GROUPS)-1:0] bank_group;
         logic [$clog2(BANKS_PER_GROUP)-1:0] bank;
         logic [ROW_BITS-1:0] row;
@@ -80,6 +76,7 @@ module request_scheduler #(
     // Function to set fields of a write request
     function automatic void init_mem_req(
         output mem_request_t req,
+        input logic [PADDR_BITS-1:0] addr,
         input logic [$clog2(BANK_GROUPS)-1:0] bg,
         input logic [$clog2(BANKS_PER_GROUP)-1:0] b,
         input logic [ROW_BITS-1:0] r,
@@ -89,6 +86,7 @@ module request_scheduler #(
         input logic write,
         input logic [2:0] state
     );
+        req.addr = addr;
         req.bank_group = bg;
         req.bank = b;
         req.row = r;
@@ -133,10 +131,10 @@ module request_scheduler #(
                 cmd_out_t = cmds[p];
                 row_out_t = top.row;
                 col_out_t = top.col;
-                
-                if (p == 1) begin
+                // Which command are we considering sending out to DRAM bank?
+                if (p == 1) begin // write command
                     val_out_t = top.val_in;//not bursting??
-                end else if (p == 2) begin
+                end else if (p == 2) begin // activate command
                     bank_state_params_in.activate = bank_state_params_out.active_bank;
                     bank_state_params_in.activate[i] = 1'b1;
                     bank_state_params_in.row_address = top.row;
@@ -145,7 +143,7 @@ module request_scheduler #(
                     bank_state_params_in.precharge = bank_state_params_out.ready_to_access;
                     bank_state_params_in.precharge[i] = 1'b1;
                     val_out_t = 'b0;
-                end else begin
+                end else begin // read command
                     val_out_t = 'b0;//
                 end
                 
@@ -172,6 +170,10 @@ module request_scheduler #(
 
     logic [31:0] cycle_counter;
     logic [$clog2(BANK_GROUPS) + $clog2(BANKS_PER_GROUP) - 1:0] bank_idx;
+    logic [$clog2(BANK_GROUPS)-1:0] bank_group_in;
+    logic [$clog2(BANKS_PER_GROUP)-1:0] bank_in;
+    logic [ROW_BITS-1:0] row_in;
+    logic [COL_BITS-1:0] col_in;
     bank_state_params_in_t bank_state_params_in;
     bank_state_params_out_t bank_state_params_out;
     bank_state_params_out_t bank_state;
@@ -191,6 +193,7 @@ module request_scheduler #(
     mem_request_t incoming_req;
 
     // tmp holding regs
+    logic [PADDR_BITS-1:0] addr_out_t;
     logic [$clog2(BANK_GROUPS)-1:0] bank_group_out_t;
     logic [$clog2(BANKS_PER_GROUP)-1:0] bank_out_t;
     logic [ROW_BITS-1:0] row_out_t;
@@ -200,6 +203,20 @@ module request_scheduler #(
     logic valid_out_t;
     
     assign bank_idx = (bank_group_in * BANKS_PER_GROUP[$clog2(BANK_GROUPS) + $clog2(BANKS_PER_GROUP) - 1:0]) + {{$clog2(BANK_GROUPS){1'b0}}, bank_in};
+
+    address_parser #(
+        .ROW_BITS(ROW_BITS),
+        .COL_BITS(COL_BITS),
+        .PADDR_BITS(PADDR_BITS),
+        .BANK_GROUPS(BANK_GROUPS),
+        .BANKS_PER_GROUP(BANKS_PER_GROUP)
+    ) _address_parser(
+        .mem_bus_addr_in(mem_bus_addr_in),
+        .row_out(row_in),
+        .col_out(col_in),
+        .bg_out(bank_group_in),
+        .ba_out(bank_in) 
+    );
 
     sdram_bank_state #(
         .ROW_WIDTH(ROW_BITS),
@@ -301,6 +318,7 @@ module request_scheduler #(
             bank_group_out <= '0;
         end else begin
             cycle_counter <= cycle_counter + 1;
+            addr_out <= addr_out_t;
             bank_group_out <= bank_group_out_t;
             bank_out <= bank_out_t;
             row_out <= row_out_t;
@@ -308,6 +326,7 @@ module request_scheduler #(
             val_out <= val_out_t;
             cmd_out <= cmd_out_t;
             valid_out <= valid_out_t;
+            last_read <= last_read_t;
             // $display("Read Queue Ready Top %b", read_params_out[17].ready_top_out.row);
             // $display("Activation Queue Pending Top %b", activation_params_out[17].pending_top_out.row);
             // $display("Activation Queue Ready Top %b", activation_params_out[17].pending_top_out.row);
@@ -324,6 +343,7 @@ module request_scheduler #(
         assign read_prio = |read_prio_out;
     endgenerate
     logic[31:0] last_read;
+    logic[31:0] last_read_t;
     always_comb begin
         done = 1'b0;
         valid_out_t = 1'b0;
@@ -333,11 +353,13 @@ module request_scheduler #(
         val_out_t = 'b0;
         bank_out_t = 'b0;
         bank_group_out_t = 'b0;
+        last_read_t = last_read;
         bank_state_params_in.activate = '{default:0};
         bank_state_params_in.precharge =  '{default:0};
         bank_state = bank_state_params_out;
         init_mem_req(
             incoming_req,
+            mem_bus_addr_in,
             bank_group_in,
             bank_in,
             row_in,
@@ -382,10 +404,10 @@ module request_scheduler #(
                 precharge_params_in[bank_idx].req_in = incoming_req;
             end
         end
-        if (cmd_ready) begin
+        if (cmd_ready) begin // DRAM has a one cycle slot for the SDRAM controller to send out the command, let's see which bank queue to send command out
             // Update params array
-            if (read_prio) begin
-                if (last_read < cycle_counter - 4) begin
+            if (read_prio) begin // are there any pending read requests that are older than write reqeusts?
+                if (last_read_t < cycle_counter - 4) begin // ensure that there has been at least 4 cycles since the last read command (bursting)
                     process_bank_commands(
                         0,
                         read_params_in,
@@ -402,7 +424,7 @@ module request_scheduler #(
                         bank_out_t,
                         bank_group_out_t
                     );
-                    last_read = cycle_counter;
+                    last_read_t = cycle_counter;
                 end
             end else begin // if (!bursting)begin
                 process_bank_commands(
