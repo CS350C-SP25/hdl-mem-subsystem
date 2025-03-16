@@ -605,14 +605,14 @@ module command_sender #(
         logic [$clog2(BANKS_PER_GROUP)-1:0] bank;
         logic [ROW_BITS-1:0] row;
         logic [COL_BITS-1:0] col;
-        logic [31:0] done_count; // cycle counter of when this request is finished and on the bus
+        logic [31:0] cycle_counter; 
     } read_request_t;
 
     logic   enqueue_in,
             dequeue_in,
             empty,
             full;
-    logic [31:0] clk_in;
+    logic [31:0] cycle_counter;
     read_request_t req_in, req_out;
 
     mem_req_queue #(
@@ -624,7 +624,7 @@ module command_sender #(
         .enqueue_in(enqueue_in),
         .dequeue_in(dequeue_in),
         .req_in(req_in),
-        .cycle_count(),
+        .cycle_count(cycle_counter),
         .req_out(req_out),
         .empty(empty),
         .full(full)
@@ -646,49 +646,52 @@ module command_sender #(
             .dram_addr_out(dram_addr_out)
         );
         
-        // If the command is a Read, put it in the read queue. Remember the time the command is supposed to finish
-        if (cmd_in == READ) begin
-            // TODO: Add (counter + CAS_LATENCY) to queue also check if this is off by one
-            //wait CAS_LATENCY-1 cycles then set bursting to true
-            cycle_counter = 22;
+    end
 
-        end
-
-        // If the command is a Write, begin bursting
-        if (cmd_in == WRITE) begin
-            // TODO: consult DIMM code for how to burst Write
-            // Remember to set bursting to 1
-            bursting = 1'b1;
-        end
-        //oops this needs to be clocked on posedge
-        if (awaiting_read) begin
-            if (cycle_counter == 0) begin
-                bursting = 1'b1;
-                read_burst_ready = 1'b1;
+    always_ff @(posedge clk_in or posedge reset) begin
+        if (reset) begin
+            cycle_counter = 0;
+        end else begin
+            if (cmd_in == READ) begin
+                req_in.bank_group = bank_group_in;
+                req_in.bank = bank_in;
+                req_in.row = row_in;
+                req_in.col = col_in;
+                req_in.cycle_counter = cycle_counter;
+                enqueue_in = 1'b1;
             end else begin
-
+                enqueue_in = 1'b0;
             end
+
+            if (!empty && req_out.cycle_counter + CAS_LATENCY - 4 >= cycle_counter && req_out.cycle_counter + CAS_LATENCY + 4 < cycle_counter) begin
+                bursting <= 1'b1;
+            end else begin
+                bursting <= 1'b0;
+            end
+
+            if (!empty && req_out.cycle_counter + CAS_LATENCY == cycle_counter) begin
+                read_burst_ready = 1'b1;
+            end
+
+            if (!empty && req_out.cycle_counter + CAS_LATENCY + 3 == cycle_counter) begin
+                dequeue_in = 1'b1;
+            end else begin
+                dequeue_in=1'b0;
+            end
+            cycle_counter <= cycle_counter + 1;
         end
 
-    end else begin
-    // Else, check head of pending command queue to see if its end time matches the counter
-        // If so, begin burst reading
-            // TODO: consult DIMM code for how to burst Read
-            // Remember to set bursting to 1
-        
-        // Forward complete data up the bus to LLC
     end
 
     // Increment counter
     logic read_bursting;
     logic write_bursting;
-    always_ff @(posedge reset or posedge clk)
+    always_ff @(posedge reset or posedge clk_in or negedge clk_in)
         if (reset) begin
             counter <= '0;
             clk_in <= 0;
             enqueue_in <= 0;
             dequeue_in <= 0;
-            // TODO: clear req_in too?
 
         end else begin
             if (read_burst_ready) begin
@@ -696,7 +699,7 @@ module command_sender #(
             end else if (read_bursting) begin
                 val_out[counter] = mem_bus_value_io;
                 counter <= counter == 7 ? 0 : counter + 1;
-                read_burst_ready <= counter != 7;
+                read_burst_ready = counter != 7;
                 read_bursting <= counter != 7;
             end else if ((cmd_in == WRITE && valid_in) || write_bursting) begin
                 counter <= counter == 7 ? 0 : counter + 1;
