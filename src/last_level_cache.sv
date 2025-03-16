@@ -19,8 +19,80 @@
 // go unused. This is because DRAM is pipelined, and the synchronization is done
 // via. known latency times, rather than through handshake protocols. Handshake
 // protocols do not work well with bi-directional wires anyways.
-
 module last_level_cache #(
+    parameter int A = 8,
+    parameter int B = 64,
+    parameter int C = 16384,
+    parameter int PADDR_BITS = 19
+) (
+    // Generic
+    input logic clk_in,
+    input logic rst_N_in,  // Resets cache without flushing
+    input logic cs_in,  // Chip Select (aka. enable)
+    input logic flush_in,  // Flush all of the cache to memory
+    // Inputs from Higher-Level Cache
+    input logic hc_valid_in,  // data is ready for either lsu or next level cache
+    input logic hc_ready_in,  // ready to receive input from LLC. This is priority
+    input logic [PADDR_BITS-1:0] hc_addr_in,  // This address being returned may cause an eviction!
+    input logic [63:0] hc_value_in,  // The write to the lower-level cache
+    input logic hc_we_in,  // Higher-level cache is requesting a read/write
+    // Outputs to Higher-Level Caches (remember lower is slower with caches)
+    output logic hc_ready_out,  // lower cache is ready (lower is slower)
+    output logic hc_valid_out,  // lower cache is sending data to this module
+    output logic [PADDR_BITS-1:0] hc_addr_out,  // Address being returned may cause an eviction!
+    output logic [63:0] hc_value_out,  // lower
+    // Inputs from Memory Bus (SDRAM controller)
+    input logic mem_bus_ready_in,  // This might go unsused...
+    input logic mem_bus_valid_in,  // DRAM data is valid for LLC to consume
+    // InOut on Memory Bus (SDRAM controller)
+    inout logic [63:0] mem_bus_value_io,  // Load / Store value for memory module
+    // Outputs to Memory Bus (SDRAM controller)
+    output logic [PADDR_BITS-1:0] mem_bus_addr_out,  // Load addr for memory module
+    output logic mem_bus_ready_out,  // Should ALWAYS be ready to receive data from SDRAM controller
+    output logic mem_bus_valid_out
+);
+    localparam W = 64;
+    logic sdram_valid_out;
+    logic sdram_ready_out;
+    logic [W-1:0] sdram_addr_out;
+    logic [W-1:0] sdram_value_out;
+    logic sdram_we_out;
+
+    logic 
+
+    cache #(
+        .A(A),
+        .B(B),
+        .C(C),
+        .W(64)  // word size
+    ) dut (
+      .rst_N_in(rst_N_in),
+      .clk_in(clk_in),
+      .cs_in(cs_in),
+      .flush_in(flush_in),
+      .hc_valid_in(hc_valid_in),
+      .hc_ready_in(hc_ready_in),
+      .hc_addr_in(hc_addr_in),
+      .hc_value_in(hc_value_in),
+      .hc_we_in(hc_we_in),
+      .lc_valid_out(lc_valid_out),
+      .lc_ready_out(lc_ready_out),
+      .lc_addr_out(lc_addr_out),
+      .lc_value_out(lc_value_out),
+      .we_out(sdram_we_out),
+      .lc_valid_in(lc_valid_in),
+      .lc_ready_in(lc_ready_in),
+      .lc_addr_in(lc_addr_in),
+      .lc_value_in(lc_value_in),
+      .hc_valid_out(hc_valid_out),
+      .hc_ready_out(hc_ready_out),
+      .hc_we_out(hc_we_out),
+      .hc_addr_out(hc_addr_out),
+      .hc_value_out(hc_value_out)
+  );
+endmodule: last_level_cache
+
+module last_level_cache_old #(
     parameter int A = 8,
     parameter int B = 64,
     parameter int C = 16384,
@@ -275,7 +347,7 @@ module last_level_cache #(
         end
     end
 
-endmodule : last_level_cache
+endmodule : last_level_cache_old
 
 // A signal is expected to be sent to multiple DDR4 SDRAM chips at a time. You
 // do need to consider this, it is done transparently by the DIMM.
