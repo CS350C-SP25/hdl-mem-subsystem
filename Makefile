@@ -42,7 +42,7 @@ scheduler: $(SCHEDULER_BIN)
 	./$(SCHEDULER_BIN)
 
 cache: $(CACHE_BIN)
-    ./$(CACHE_BIN)
+	./$(CACHE_BIN)
 
 # Compile with Verilator
 $(DIMM_BIN):
@@ -52,7 +52,7 @@ $(SCHEDULER_BIN):
 	$(OBJCACHE) $(VERILATOR) $(VFLAGS) $(SCHEDULER_SRCS)
 
 $(CACHE_BIN):
-    $(OBJCACHE) $(VERILATOR) $(VFLAGS) $(CACHE_SRCS)
+	$(OBJCACHE) $(VERILATOR) $(VFLAGS) $(CACHE_SRCS)
 
 # Clean generated files
 clean:
@@ -65,6 +65,6 @@ clean-scheduler:
 	rm -rf obj_dir/Vmem_scheduler
 
 clean-cache:
-    rm -rf obj_dir/Vcache
+	rm -rf obj_dir/Vcache
 
 .PHONY: all clean run dimm scheduler

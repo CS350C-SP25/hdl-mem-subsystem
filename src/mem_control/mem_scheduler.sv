@@ -12,7 +12,7 @@ module request_scheduler #(
 ) (
     input logic clk_in,
     input logic rst_in,
-    input  logic [PADDR_BITS-1:0] mem_bus_addr_in,
+    input logic [PADDR_BITS-1:0] mem_bus_addr_in,
     input logic valid_in, // if not valid ignore
     input logic write_in, // if val is ok to write (basically write request)
     input logic [511:0] val_in, // val to write if write
