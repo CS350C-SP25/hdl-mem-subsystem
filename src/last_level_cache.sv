@@ -131,6 +131,7 @@ module last_level_cache #(
     // TODO: add functionality for chip select?
 
     logic mem_bus_ready;
+    logic bursting_block;
 
     request_scheduler #(
         .BUS_WIDTH(BUS_WIDTH),  // bus width per chip
@@ -145,12 +146,13 @@ module last_level_cache #(
         .BANKS(BANK_GROUPS * BANKS_PER_GROUP)
     ) _request_scheduler (
         .clk_in(clk_in),
-        .rst_in(rst_N_in),
+        .rst_in(rst_N_in), //TODO CLINT WHICH IS IT?? rst or NOT rst
         .mem_bus_addr_in(sdram_addr_out),
         .valid_in(sdram_valid_out), 
         .write_in(sdram_we_out), 
         .val_in(sdram_value_out), 
         .cmd_ready(mem_bus_ready), 
+        .bursting(bursting_block),
         // OUTPUTS
         .addr_out(mem_bus_addr_out),
         .bank_group_out(_bus_bank_group_out),
@@ -163,6 +165,31 @@ module last_level_cache #(
     );
     // TODO IMPLEMENT CMD SENDER TO SEND CMDS ON BUS AND TO RECEIVE DATA FROM BUS!
 
+    command_sender #(
+        .CAS_LATENCY(CAS_LATENCY),
+        .BANK_GROUPS(BANK_GROUPS),
+        .BANKS_PER_GROUP(BANKS_PER_GROUP),       // banks per group
+        .ROW_BITS(ROW_BITS),    // bits to address rows
+        COL_BITS(COL_BITS)     // bits to address columns
+    ) cmd_sender (
+        .clk_in(clk_in),
+        .rst_N_in(rst_N_in), //TODO HERE YOU GO HERE TOO CLINT
+        .bank_group_in(_bus_bank_group_out),
+        .bank_in(_bus_bank_out),
+        .row_in(_bus_row_out),
+        .col_in(_bus_col_out),
+        .valid_in(_bus_valid_out), // if not valid ignore
+        .val_in(_bus_val_out), // val to write if write
+        .cmd_in(_bus_cmd_out),
+
+        .bank_group_out(),
+        .bank_out(),
+        .act_out(lc_valid_in), // Command bit (read is resolving)
+        .dram_addr_out(),  // col (offset?)
+        .val_out(), //oops ITS TOO BIG. this is a cache line but the tight cache is looking for a WORD on the clock cycle, at best with DDR4 I need at least 2 words per cycle
+        .bursting(bursting_block), // set to HI when the dimm should not recieve any commands that will interfere with a burst
+        .mem_bus_value_io(mem_bus_value_io)  // Load / Store value for memory module
+    );
 
     // Set default values
     always_ff @(posedge clk_in or posedge rst_N_in) begin

@@ -17,7 +17,7 @@ module request_scheduler #(
     input logic write_in, // if val is ok to write (basically write request)
     input logic [511:0] val_in, // val to write if write
     input logic cmd_ready, // is controller ready to receive command
-    // input logic bursting,
+    input logic bursting,
     output logic [PADDR_BITS-1:0] addr_out,
     output logic [$clog2(BANK_GROUPS)-1:0] bank_group_out,
     output logic [$clog2(BANKS_PER_GROUP)-1:0] bank_out,
@@ -426,7 +426,7 @@ module request_scheduler #(
                     );
                     last_read_t = cycle_counter;
                 end
-            end else begin // if (!bursting)begin
+            end else if (!bursting) begin
                 process_bank_commands(
                     1,
                     write_params_in,
