@@ -15,7 +15,7 @@ module cache_tb;
   logic         lc_valid_in;
   logic         lc_ready_in;
   logic [ 63:0] lc_addr_in;  // W=64
-  logic [ 63:0] lc_value_in;
+  logic [511:0] lc_value_in;
 
   // Outputs
   logic         lc_valid_out;
@@ -109,7 +109,7 @@ module cache_tb;
     @(posedge clk_in);
     lc_valid_in = 1;
     lc_addr_in  = 64'h00;
-    lc_value_in = 64'h0123456789ABCDEF;
+    lc_value_in = 512'h0123456789ABCDEF;
     $display("[%0t] Sending lower-level response", $time);
 
     // #100;
@@ -164,7 +164,7 @@ module cache_tb;
     @(posedge clk_in);
     lc_valid_in = 1;
     lc_addr_in  = 64'h4000;
-    lc_value_in = 64'h0CAD456789AACDEF;
+    lc_value_in = 512'h0CAD456789AACDEF;
     $display("[%0t] Sending lower-level response", $time);
 
     // #100;
@@ -218,7 +218,7 @@ module cache_tb;
     @(posedge clk_in);
     lc_valid_in = 1;
     lc_addr_in  = 64'h34000;
-    lc_value_in = 64'h0DEADBEEF12345678;
+    lc_value_in = 512'h0DEADBEEF12345678;
     $display("[%0t] Sending lower-level response", $time);
 
     // #100;
@@ -273,7 +273,7 @@ module cache_tb;
     @(posedge clk_in);
     lc_valid_in = 1;
     lc_addr_in  = 64'h44000;
-    lc_value_in = 64'h0CAD456789AACDEF;
+    lc_value_in = 512'h0CAD456789AACDEF;
     $display("[%0t] Sending lower-level response", $time);
 
     // #100;
@@ -327,7 +327,7 @@ module cache_tb;
     @(posedge clk_in);
     lc_valid_in = 1;
     lc_addr_in  = 64'h54;
-    lc_value_in = 64'hDEADBEEFDEADBEEF;
+    lc_value_in = 512'hDEADBEEFDEADBEEF;
     $display("[%0t] Sending lower-level response", $time);
 
     // #100;
@@ -338,7 +338,7 @@ module cache_tb;
     @(posedge clk_in);
     lc_valid_in = 0;
     hc_valid_in = 1;
-    hc_addr_in  = 64'h54;
+    hc_addr_in  = 64'h40;
 
     wait (hc_ready_out == 1);
 
@@ -390,7 +390,7 @@ module cache_tb;
       @(posedge clk_in);
       lc_valid_in = 1;  // If eviction, LLC might need ready/valid handshake, for now assume ready
       lc_addr_in  = lc_addr_out; // Echo address if needed for eviction ack or write miss data provide
-      lc_value_in = 64'h0; // Dummy data for LLC ready, if needed. For eviction, LLC wouldn't return data.
+      lc_value_in = 512'h0; // Dummy data for LLC ready, if needed. For eviction, LLC wouldn't return data.
       $display("[%0t] Simulating lower-level ready for eviction/write miss handling", $time);
 
       @(posedge clk_in);
@@ -454,7 +454,7 @@ module cache_tb;
     @(posedge clk_in);
     lc_valid_in = 1;
     lc_addr_in  = 64'h4000;
-    lc_value_in = 64'h0CAD456789AACDEF;
+    lc_value_in = 512'h0CAD456789AACDEF;
     $display("[%0t] Sending lower-level response", $time);
 
     // #100;

@@ -77,6 +77,6 @@ clean-sdram:
 	rm -rf obj_dir/Vsdram_controller
 
 clean-cache:
-	rm -rf obj_dir/Vcache
+	rm -rf obj_dir/bin/Vcache
 
 .PHONY: all clean run dimm scheduler

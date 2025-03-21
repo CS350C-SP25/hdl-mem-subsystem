@@ -38,13 +38,13 @@ module cache #(
     output logic lc_valid_out,  // data is ready, basically that we need to receive data from low-level-cache
     output logic lc_ready_out,  // ready to receive input, basically that WE are ready to receive output from it
     output logic [W-1:0] lc_addr_out,  // Input address to read/write
-    output logic [511:0] lc_value_out,  // addr or value out
+    output logic [B*8-1:0] lc_value_out,  // addr or value out
     output logic we_out,  // Write to lower-level cache/dram
     // Inputs from lower-level cache or memory controller (returns data, may evict)
     input logic lc_valid_in,  // from lower-level cache / DRAM controller, basically that it wants to give us data
     input logic lc_ready_in,  // from lower-level cache / DRAM controller, basically that IT is ready to receive input
     input logic [W-1:0] lc_addr_in,  // Input address to read/write
-    input logic [W-1:0] lc_value_in,  // Input address to read/write
+    input logic [B*8-1:0] lc_value_in,  // Input address to read/write
     // Outputs to higher-level cache (returning a fetched value)
     output logic hc_valid_out,  // from LSU / higher-level cache
     output logic hc_ready_out,  // from LSU / higher-level cache
@@ -70,7 +70,7 @@ module cache #(
   logic lc_valid_reg;
   logic lc_ready_reg;
   logic [W-1:0] lc_addr_reg;
-  logic [63:0] lc_value_reg;
+  logic [B*8-1:0] lc_value_reg;
 
   // Output registers
   logic lc_valid_out_reg;
@@ -184,7 +184,7 @@ module cache #(
   assign cur_set = lc_valid_reg ? lc_set : hc_set;
   assign cur_tag = lc_valid_reg ? lc_tag : hc_tag;
   assign cur_offset = lc_valid_reg ? lc_offset : hc_offset;
-  assign cur_data = lc_valid_reg ? lc_value_reg : hc_value_reg;
+  assign cur_data = hc_value_reg;
 
 
   logic hc_valid_comb, hc_ready_comb;
@@ -310,8 +310,8 @@ module cache #(
 
 
       WRITE_CACHE: begin
-        if (cl_in_reg) begin
-          cache_temp[hit_way_reg][cur_set] = cache_line_in_reg;
+        if (cl_in_reg || lc_valid_reg) begin
+          cache_temp[hit_way_reg][cur_set] = lc_valid_reg ? lc_value_reg : cache_line_in_reg;
         end else begin
           cache_temp[hit_way_reg][cur_set][cur_offset*8+:W] = cur_data;
         end
