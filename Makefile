@@ -18,16 +18,18 @@ $(info OBJCACHE: $(OBJCACHE))
 VERILATOR ?= /u/nate/verilator
 
 # Flags
-VFLAGS = --binary -j $$(( `nproc` - 1 )) --trace 
+VFLAGS = --binary -j $$(( `nproc` - 1 )) --trace --Mdir obj_dir/bin
 
 # Source files
 DIMM_SRCS = --cc src/ddr4_dimm.sv --exe src/dimm_tb2.cpp
-SCHEDULER_SRCS = --cc $(wildcard src/mem_control/*.sv) src/testbenches/mem_scheduler_tb.sv
+SCHEDULER_SRCS = --cc src/mem_control/bank_state.sv src/mem_control/comb_util.sv src/mem_control/mem_scheduler.sv src/mem_control/req_queue.sv src/testbenches/mem_scheduler_tb.sv
+SDRAM_SRCS = --cc src/mem_control/sdram_controller.sv src/mem_control/bank_state.sv src/mem_control/comb_util.sv
 CACHE_SRCS = --cc --timing src/cache.sv src/testbenches/cache_tb.sv
 
 # Output binaries
 DIMM_BIN = obj_dir/Vddr4_dimm
 SCHEDULER_BIN = obj_dir/Vmem_scheduler
+SDRAM_BIN = obj_dir/Vsdram_controller
 CACHE_BIN = obj_dir/Vcache
 
 # Default target (alias for dimm)
@@ -41,8 +43,11 @@ dimm: $(DIMM_BIN)
 scheduler: $(SCHEDULER_BIN)
 	./$(SCHEDULER_BIN)
 
+sdram: $(SDRAM_BIN)
+	./$(SDRAM_BIN)
+
 cache: $(CACHE_BIN)
-    ./$(CACHE_BIN)
+	./$(CACHE_BIN)
 
 # Compile with Verilator
 $(DIMM_BIN):
@@ -51,8 +56,11 @@ $(DIMM_BIN):
 $(SCHEDULER_BIN):
 	$(OBJCACHE) $(VERILATOR) $(VFLAGS) $(SCHEDULER_SRCS)
 
+$(SDRAM_BIN):
+	$(OBJCACHE) $(VERILATOR) $(VFLAGS) $(SDRAM_SRCS)
+
 $(CACHE_BIN):
-    $(OBJCACHE) $(VERILATOR) $(VFLAGS) $(CACHE_SRCS)
+	$(OBJCACHE) $(VERILATOR) $(VFLAGS) $(CACHE_SRCS)
 
 # Clean generated files
 clean:
@@ -64,7 +72,10 @@ clean-dimm:
 clean-scheduler:
 	rm -rf obj_dir/Vmem_scheduler
 
+clean-sdram:
+	rm -rf obj_dir/Vsdram_controller
+
 clean-cache:
-    rm -rf obj_dir/Vcache
+	rm -rf obj_dir/Vcache
 
 .PHONY: all clean run dimm scheduler
