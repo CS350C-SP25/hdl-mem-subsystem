@@ -31,6 +31,8 @@ module cache #(
     input logic [W-1:0] hc_addr_in,  // Input address to read/write
     input logic [W-1:0] hc_value_in,  // Input data on write
     input logic hc_we_in,  // from proc or higher-cache, write enable
+    input logic [B*8-1:0] cache_line_in,  // input of cache line -- if this is an eviction from higher cache
+    input logic cl_in, // input enabled if this is a cache line write -- should be enabled along with hc_we_in
     // Outputs to lower-level cache (or mem con troller)
     output logic lc_valid_out,  // data is ready, basically that we need to receive data from low-level-cache
     output logic lc_ready_out,  // ready to receive input, basically that WE are ready to receive output from it
@@ -152,6 +154,9 @@ module cache #(
   logic flush_complete;
   logic cur_dirty;
 
+  cache_line_t cache_line_in_reg;
+  logic cl_in_reg;
+
   int hit_way_reg;
   logic hit_reg;
 
@@ -226,9 +231,7 @@ module cache #(
 
   always_comb begin : generic_cache_combinational
     next_state = cur_state;
-
     cur_hit = hit_reg;
-
     lc_valid_comb = 0;
     hc_valid_comb = 0;
     hc_ready_comb = 0;
@@ -306,7 +309,12 @@ module cache #(
 
 
       WRITE_CACHE: begin
-        cache_temp[hit_way_reg][cur_set][cur_offset*8+:W] = cur_data;
+        if (cl_in_reg) begin
+          cache_temp[hit_way_reg][cur_set] = cache_line_in_reg;
+        end else begin
+          cache_temp[hit_way_reg][cur_set][cur_offset*8+:W] = cur_data;
+        end
+
         tag_temp[hit_way_reg][cur_set].valid = 1;
         tag_temp[hit_way_reg][cur_set].tag = cur_tag;
         tag_temp[hit_way_reg][cur_set].dirty = lc_valid_reg ? 0 : 1; // only dirty if its a write from hc, not lc
@@ -355,9 +363,7 @@ module cache #(
 
       default: next_state = IDLE;
     endcase
-
-    $monitor("State was %h, Next is %h", cur_state, next_state);
-  end
+  end : generic_cache_combinational
 
 
   always_ff @(posedge clk_in) begin : update_registers_and_state_ff
@@ -395,6 +401,8 @@ module cache #(
         lc_addr_reg  <= lc_addr_in;
         lc_value_reg <= lc_value_in;
         {cur_tag, cur_set, cur_offset} = (lc_valid_in) ? lc_addr_in : hc_addr_in;
+        cache_line_in_reg <= cache_line_in;
+        cl_in_reg <= cl_in;
       end
 
 
