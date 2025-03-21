@@ -30,7 +30,7 @@ CACHE_SRCS = --cc --timing src/cache.sv src/testbenches/cache_tb.sv
 DIMM_BIN = obj_dir/Vddr4_dimm
 SCHEDULER_BIN = obj_dir/Vmem_scheduler
 SDRAM_BIN = obj_dir/Vsdram_controller
-CACHE_BIN = obj_dir/Vcache
+CACHE_BIN = obj_dir/bin/Vcache
 
 # Default target (alias for dimm)
 all: dimm

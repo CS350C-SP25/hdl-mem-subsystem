@@ -1,3 +1,4 @@
+`timescale 1ps / 1ps
 // A generic cache. It must consider:
 // - returning data on a hit (to higher-level cache)
 // - requesting data on a miss (to lower-level cache)
