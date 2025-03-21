@@ -171,7 +171,7 @@ module dimm_addr_assembler #(
         PRECHARGE = 3'b011
     } commands;
 
-    casez (cmd_in) begin
+    case (cmd_in)
         READ: begin
             addr = {1'b1, 1'b0, 1'b1, 3'bz, 1'b0, {(10-COL_BITS)'bz}, col_in};
         end
@@ -186,7 +186,7 @@ module dimm_addr_assembler #(
         end
         default:
             addr = 17'bz;
-    end
+    endcase
 
 endmodule
 

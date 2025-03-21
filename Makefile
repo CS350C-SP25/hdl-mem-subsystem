@@ -24,7 +24,7 @@ VFLAGS = --binary -j $$(( `nproc` - 1 )) --trace --Mdir obj_dir/bin
 DIMM_SRCS = --cc src/ddr4_dimm.sv --exe src/dimm_tb2.cpp
 SCHEDULER_SRCS = --cc src/mem_control/bank_state.sv src/mem_control/comb_util.sv src/mem_control/mem_scheduler.sv src/mem_control/req_queue.sv src/testbenches/mem_scheduler_tb.sv
 SDRAM_SRCS = --cc src/mem_control/sdram_controller.sv src/mem_control/bank_state.sv src/mem_control/comb_util.sv
-CACHE_SRCS = --cc --timing src/cache.sv src/testbenches/cache_tb.sv
+CACHE_SRCS = --cc --timing src/cache.sv src/mem_control/comb_util.sv src/testbenches/cache_tb.sv
 
 # Output binaries
 DIMM_BIN = obj_dir/Vddr4_dimm
