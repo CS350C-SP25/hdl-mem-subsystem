@@ -35,7 +35,7 @@ module cache #(
     output logic lc_valid_out,  // data is ready, basically that we need to receive data from low-level-cache
     output logic lc_ready_out,  // ready to receive input, basically that WE are ready to receive output from it
     output logic [W-1:0] lc_addr_out,  // Input address to read/write
-    output logic [W-1:0] lc_value_out,  // addr or value out
+    output logic [511:0] lc_value_out,  // addr or value out
     output logic we_out,  // Write to lower-level cache/dram
     // Inputs from lower-level cache or memory controller (returns data, may evict)
     input logic lc_valid_in,  // from lower-level cache / DRAM controller, basically that it wants to give us data
@@ -184,47 +184,45 @@ module cache #(
   logic hc_valid_comb, hc_ready_comb;
   logic lc_valid_comb, lc_ready_comb;
 
+  logic [LRU_BITS-1:0] plru_state[NUM_SETS];  // PLRU state for each set
   logic burst_evict_done;
+  logic burst_evict_index;
+
+  cache_line_t evict_data;
+  cache_line_t evict_data_reg;
 
   logic [A-1:0] victim_way_reg;
   function automatic logic [LRU_BITS-1:0] update_plru(logic [LRU_BITS-1:0] current_plru, int way);
     int depth = $clog2(A);
     logic [LRU_BITS-1:0] new_plru = current_plru;
     int node = 0;
-    int temp_way_bit = 0;
-    logic way_bit;
+    logic bit_i;
+    int temp;
 
     for (int i = depth - 1; i >= 0; i--) begin
-      temp_way_bit = ((way >> i) & 32'b1);  // No space before [0]
-      way_bit = temp_way_bit[0];
-      new_plru[node] = ~way_bit;
-      node = (node << 1) + 1 + int'(way_bit);
+      temp = (way >> i) & 1;
+      bit_i = temp[0];
+      new_plru[node] = ~bit_i;
+      node = 2 * node + 1 + int'(bit_i);
+      if (node >= LRU_BITS) break;
     end
     return new_plru;
   endfunction
 
-
-
-
-  logic [LRU_BITS-1:0] plru_state[NUM_SETS];  // PLRU state for each set
-
   function automatic int get_victim_way(logic [LRU_BITS-1:0] plru);
-    int depth = $clog2(A);  // Tree depth
-    int victim_way = 0;  // Result
-    int node = 0;  // Start at root
+    int   depth = $clog2(A);
+    int   node = 0;
+    int   victim_way = 0;
+    logic dir;
 
-    for (int i = depth - 1; i >= 0; i--) begin
-      // Follow direction bit (0=left, 1=right)
-      int dir = plru[node] ? 1 : 0;
-
-      // Update victim way and next node
-      victim_way = (victim_way << 1) | dir;
-      node = (node << 1) + 1 + dir;
+    for (int i = 0; i < depth; i++) begin
+      dir = plru[node];
+      victim_way = (victim_way << 1) | (dir ? 1 : 0);
+      node = 2 * node + 1 + int'(dir);
+      if (node >= LRU_BITS) break;
     end
-
-    return victim_way == A ? victim_way - 1 : victim_way;
+    return victim_way;
   endfunction
-
 
   always_comb begin : generic_cache_combinational
     next_state = cur_state;
@@ -247,6 +245,7 @@ module cache #(
     we_out_comb = 0;
     lc_value_out_comb = 0;
     lc_addr_out_comb = 0;
+    evict_data = evict_data_reg;
 
     plru_temp = plru_state;
 
@@ -272,13 +271,15 @@ module cache #(
         end
 
         if (lc_valid_reg) begin
-          next_state = WRITE_CACHE;
           changed_way = get_victim_way(plru_state[cur_set]);
           plru_temp[cur_set] = update_plru(plru_state[cur_set], changed_way);
+          next_state = tag_array[changed_way][cur_set].dirty ? EVICT_BLOCK : WRITE_CACHE;
         end else if (cur_hit) begin
+          changed_way = get_victim_way(plru_state[cur_set]);
+
+          plru_temp[cur_set] = update_plru(plru_state[cur_set], changed_way);
+
           if (hc_we_reg) begin
-            changed_way = get_victim_way(plru_state[cur_set]);
-            plru_temp[cur_set] = update_plru(plru_state[cur_set], changed_way);
             next_state = WRITE_CACHE;  // write data to cache if this is a write (or response from LLC)
           end else begin
             // this must be a read from HC
@@ -319,8 +320,8 @@ module cache #(
         lc_addr_out_comb = {
           tag_array[hit_way_reg][cur_set].tag, cur_set, {BLOCK_OFFSET_BITS{1'b0}}
         };
-        // lc_value_out_comb = cache_data[changed_way][cur_set];
-        // lru_temp[cur_set] = update_plru(lru_state[cur_set], changed_way);
+
+        evict_data = cache_data[hit_way_reg][cur_set];
 
         next_state = EVICT_WAIT;
       end
@@ -328,8 +329,8 @@ module cache #(
       // In the EVICT_WAIT state:
       EVICT_WAIT: begin
         if (lc_ready_reg) begin
-          // Eviction write accepted, proceed to fetch new block
-          // next_state = IDLE; // changinew
+          // Eviction write accepted, cache is ready to do whatever now
+          next_state = IDLE;
         end else begin
           next_state = EVICT_WAIT;
         end
@@ -355,23 +356,7 @@ module cache #(
       default: next_state = IDLE;
     endcase
 
-    // $monitor("Hit %h, data: %h, hcv: %b, hcwe: %b, offset: %h", hit, cache_data[0][hc_set],
-    //          hc_valid_reg, hc_we_reg, hc_offset);
-
-    // $monitor("Cur State %h, HC Valid Reg %h, LC Valid Reg %h, Data: %h, Temp: %h", cur_state,
-    //          hc_valid_reg, lc_valid_reg, cache_data[0][cur_set], cache_temp[0][cur_set]);
-
-    // $monitor("[%0t] Cur State %h, HC Valid Reg %h, LC Valid Reg %h, Data: %h, CurSet %d", $time,
-    //          cur_state, hc_valid_reg, lc_valid_reg, cache_data[0][cur_set], cur_set);
-
-    // $monitor(
-    //     "[%0t] Cur State %h, HC Valid Reg %h, LC Valid Reg %h, Cur Set %d, Hit %b, Changed Way %h",
-    //     $time, cur_state, hc_valid_reg, lc_valid_reg, cur_set, cur_hit, hit_way_reg);
-
-    // $monitor("Cur State %h, HC Valid Reg %h, LC Valid Reg %h, Data: %h", cur_state, hc_valid_reg,
-    //          lc_valid_reg, cache_data[0][cur_set]);
-
-
+    $monitor("State was %h, Next is %h", cur_state, next_state);
   end
 
 
@@ -388,6 +373,7 @@ module cache #(
       lc_ready_reg <= 1'b0;
       lc_addr_reg  <= '0;
       lc_value_reg <= '0;
+      evict_data_reg <= '0;
 
       for (int i = 0; i < NUM_SETS; i++) begin
         lru_state[i] <= '0;  // no more lru
@@ -419,8 +405,11 @@ module cache #(
       lru_state <= lru_temp;
       plru_state <= plru_temp;
       we_out <= we_out_comb;
+      evict_data_reg <= evict_data;
     end
   end
+
+  assign lc_value_out = evict_data_reg;
 
   always_ff @(negedge clk_in) begin
     // data will either stay the same or be updated
