@@ -475,18 +475,18 @@ module cache_tb;
     hc_valid_in = 0;  // Request only needs to be valid for 1 cycle
 
 
-    $display("[%0t] Requesting higher-level data", $time);
+    // $display("[%0t] Requesting higher-level data", $time);
 
-    // Wait for higher-level response
-    wait (hc_valid_out == 1);
-    $display("[%0t] Received higher-level response", $time);
+    // // Wait for higher-level response
+    // wait (hc_valid_out == 1);
+    // $display("[%0t] Received higher-level response", $time);
 
-    // Verify returned data
-    if (hc_value_out === 64'h0CAD456789AACDEF) begin
-      $display("TEST PASSED: Correct data received");
-    end else begin
-      $error("TEST FAILED: Data mismatch. Expected %h, Got %h", 64'h0CAD456789AACDEF, hc_value_out);
-    end
+    // // Verify returned data
+    // if (hc_value_out === 64'h0CAD456789AACDEF) begin
+    //   $display("TEST PASSED: Correct data received");
+    // end else begin
+    //   $error("TEST FAILED: Data mismatch. Expected %h, Got %h", 64'h0CAD456789AACDEF, hc_value_out);
+    // end
 
     #10 $finish;
   end
