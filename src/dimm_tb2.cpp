@@ -4,6 +4,7 @@
 #include <iostream>
 #include <vector>
 #include <bitset>
+#include <random>
 
 // Column-address strobe latency. Delay in cycles between read request and data being ready
 const int ACTIVATION_LATENCY= 8;  // latency in cycles to activate row buffer
@@ -75,10 +76,10 @@ void precharge (uint8_t bank_num) {
     dut->cs_N_in = 1;
 
     // zero out dqs reg
-   // dut->dqs_reg = 0;
+    dut->dqs = 0;
 }
 
-void write_command (bool pre, bitset<COL_BITS> col, uint8_t bank_num ) {
+void write_command (bool pre, bitset<COL_BITS> col, uint8_t bank_num, uint64_t (&data_to_write)[8]) {
 
     // Assigning bank group bits
     dut->bg_in |= (bank_num & 0b1);
@@ -100,8 +101,18 @@ void write_command (bool pre, bitset<COL_BITS> col, uint8_t bank_num ) {
     dut->addr_in &= ~(1 << 14);
 
     // still need to do the actual data stuff here
-
-
+    dut->dqs = data_to_write[0];
+    dut->dqs = data_to_write[1];
+    toggleClock(); // assuming that this toggled 1 cycle
+    dut->dqs = data_to_write[2];
+    dut->dqs = data_to_write[3];
+    toggleClock();
+    dut->dqs = data_to_write[4]
+    dut->dqs = data_to_write[5];
+    toggleClock();
+    dut->dqs = data_to_write[6];
+    dut->dqs = data_to_write[7];
+    toggleClock();
     //precharge
     if (pre) {
         dut->addr_in |= (1 << 10);
@@ -110,6 +121,7 @@ void write_command (bool pre, bitset<COL_BITS> col, uint8_t bank_num ) {
     }
 
     dut->cs_N_in = 1;
+    dut->dqs = 0;
 }
 
 void read_command (bool pre, bitset<COL_BITS> col, uint8_t bank_num) {
@@ -140,6 +152,7 @@ void read_command (bool pre, bitset<COL_BITS> col, uint8_t bank_num) {
     }
 
     dut->cs_N_in = 1;
+    dut->dqs = 0;
 }
 
 int main (int argc, char **argv) {
@@ -149,6 +162,11 @@ int main (int argc, char **argv) {
     m_trace = new VerilatedVcdC;
     dut->trace(m_trace, 5);
     m_trace->open("dump.vcd");
+    
+    random_device rd;
+    mt19937 rng(rd());
+
+    uniform_int_distribution<int> distribution(1,4);
 
      sim_time = 0; // simulator time
 
@@ -167,6 +185,15 @@ int main (int argc, char **argv) {
 
         activate (1, 0, dut->clk_in);
         toggleClock();
+
+	int random_op = distribution(rng);
+
+	if (random_op == 1) {
+	  //
+	} else if (random_op == 2) {
+	} else if (random_op == 3) {
+	} else if (random_op == 4) {
+	}
     }
     m_trace->close();
     delete dut;
