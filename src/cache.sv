@@ -380,6 +380,8 @@ module cache #(
       lc_addr_reg  <= '0;
       lc_value_reg <= '0;
       evict_data_reg <= '0;
+      cache_line_in_reg <= '0;
+      cl_in_reg <= '0;
 
       for (int i = 0; i < NUM_SETS; i++) begin
         lru_state[i] <= '0;  // no more lru
