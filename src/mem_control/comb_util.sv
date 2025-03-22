@@ -249,15 +249,15 @@ endmodule: mem_req_queue;
 //     inout logic [63:0] mem_bus_value_io  // Load / Store value for memory module
 // );
     
-    // Trust the scheduler to not send commands that conflict with incoming data
-    logic [3:0] burst_counter;
-    // Commands enum
-    typedef enum logic[2:0] {
-        READ = 3'b000,
-        WRITE = 3'b001,
-        ACTIVATE = 3'b010,
-        PRECHARGE = 3'b011
-    } commands;
+    // // Trust the scheduler to not send commands that conflict with incoming data
+    // logic [3:0] burst_counter;
+    // // Commands enum
+    // typedef enum logic[2:0] {
+    //     READ = 3'b000,
+    //     WRITE = 3'b001,
+    //     ACTIVATE = 3'b010,
+    //     PRECHARGE = 3'b011
+    // } commands;
 
 //     // Module for queueing memory requests
 //     typedef struct packed {
@@ -273,22 +273,22 @@ endmodule: mem_req_queue;
 //     logic [31:0] cycle_counter;
 //     read_request_t req_in, req_out;
 
-    mem_req_queue #(
-        .QUEUE_SIZE(32),
-        .mem_request_t(read_request_t) // default placeholder
-    ) read_queue(
-        .clk_in(clk_in),
-        .rst_in(!rst_N_in),
-        .enqueue_in(enqueue_in),
-        .dequeue_in(dequeue_in),
-        .req_in(req_in),
-        .cycle_count(cycle_counter),
-        .req_out(req_out),
-        .empty(empty),
-        .full(full)
-    );
-    logic read_burst_ready;
-    logic [COL_BITS-1:0] read_col_start;
+    // mem_req_queue #(
+    //     .QUEUE_SIZE(32),
+    //     .mem_request_t(read_request_t) // default placeholder
+    // ) read_queue(
+    //     .clk_in(clk_in),
+    //     .rst_in(!rst_N_in),
+    //     .enqueue_in(enqueue_in),
+    //     .dequeue_in(dequeue_in),
+    //     .req_in(req_in),
+    //     .cycle_count(cycle_counter),
+    //     .req_out(req_out),
+    //     .empty(empty),
+    //     .full(full)
+    // );
+    // logic read_burst_ready;
+    // logic [COL_BITS-1:0] read_col_start;
 
 //     logic [PADDR_BITS-1:0] read_paddr;
 //     dimm_to_paddr #(

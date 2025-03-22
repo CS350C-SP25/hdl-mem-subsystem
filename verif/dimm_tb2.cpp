@@ -107,7 +107,7 @@ void write_command (bool pre, bitset<COL_BITS> col, uint8_t bank_num, uint64_t (
     dut->dqs = data_to_write[2];
     dut->dqs = data_to_write[3];
     toggleClock();
-    dut->dqs = data_to_write[4]
+    dut->dqs = data_to_write[4];
     dut->dqs = data_to_write[5];
     toggleClock();
     dut->dqs = data_to_write[6];
