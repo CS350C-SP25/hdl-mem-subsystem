@@ -191,7 +191,7 @@ module last_level_cache #(
 
     // Set default values
     always_ff @(posedge clk_in or posedge rst_N_in) begin
-        if (rst_N_in) begin
+        if (~rst_N_in) begin
             mem_bus_ready <= '0;
             mem_bus_valid_out <= '0;
         end else begin

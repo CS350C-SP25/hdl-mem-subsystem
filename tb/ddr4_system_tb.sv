@@ -5,6 +5,7 @@ module ddr4_system_tb(
   input logic [18:0] mem_bus_addr_in,  // Using PADDR_BITS-1:0
   input logic [63:0] write_data_in,
   input logic write_enable_in,
+  input logic valid,
   
   // Output ports
   output logic [63:0] read_data_out,
@@ -29,6 +30,7 @@ module ddr4_system_tb(
   logic cke;
   wire [63:0] dqs;
   wire [63:0] mem_bus_value_io;
+  logic [18:0] mem_bus_addr_in_t;
   
   // Assign outputs
   assign cs_N_out = cs_N;
@@ -50,7 +52,7 @@ module ddr4_system_tb(
   assign read_data = mem_bus_value_io;
   
   // Signals between controller and DIMM
-  logic cs_N;
+  logic cs_N = 1'b0;
   logic act;
   logic [16:0] addr;
   logic [1:0] bg;
@@ -59,7 +61,7 @@ module ddr4_system_tb(
   
   // Hard-wire timing control signals rather than using handshaking
   logic mem_bus_ready_in = 1'b1;  // Always ready
-  logic mem_bus_valid_in = 1'b1;  // Always valid when operation is requested
+  logic mem_bus_valid_in;  // Always valid when operation is requested
   logic mem_bus_ready_out;        // Not used in timing-based design
   logic mem_bus_valid_out;        // Not used in timing-based design
   
@@ -77,8 +79,8 @@ module ddr4_system_tb(
     .rst_N_in(rst_N_in),
     .cs_N_in(cs_N),
     .mem_bus_ready_in(mem_bus_ready_in),
-    .mem_bus_valid_in(mem_bus_valid_in),
-    .mem_bus_addr_in(mem_bus_addr_in),
+    .mem_bus_valid_in(valid),
+    .mem_bus_addr_in(mem_bus_addr_in_t),
     .mem_bus_value_io(mem_bus_value_io),
     .act_out(act),
     .dram_addr_out(addr),
@@ -111,6 +113,12 @@ module ddr4_system_tb(
     .dqm_in(dqm),
     .dqs(dqs)
   );
+
+  always_comb begin
+    // $display(mem_bus_addr_in);
+    mem_bus_addr_in_t = mem_bus_addr_in;
+    mem_bus_addr_in_t[PADDR_BITS-1] = write_enable_in;
+  end
 
   // Initialize cke
   initial begin

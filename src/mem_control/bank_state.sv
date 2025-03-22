@@ -36,6 +36,7 @@ module sdram_bank_state #(
         end else begin
             // For each bank, handle precharge, activation, and data request
             for (int i = 0; i < BANKS; i++) begin
+                // $display("%d: %d %d %d", i, activate[i], blocked_reg[i], precharge[i]);
                 if (blocked_reg[i]) begin
                     // If the bank is blocked (precharging), check if latency is expired
                     if (cycle_count[i] == 0) begin
@@ -54,6 +55,7 @@ module sdram_bank_state #(
                     ready[i] <= 0; // Bank is not ready during precharge
                 end else if (activate[i]) begin
                     // Activate operation: store the row address and mark the bank as active
+                    $display("Activated %d", i);
                     active_row[i] <= row_address;
                     blocked_reg[i] <= 1;
                     cycle_count[i] <= ACTIVATION_LATENCY;

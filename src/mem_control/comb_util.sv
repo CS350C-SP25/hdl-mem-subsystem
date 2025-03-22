@@ -26,6 +26,7 @@ module address_parser #(
         ba_out = mem_bus_addr_in[COL_BITS+BANK_BITS-1:COL_BITS];
         bg_out = mem_bus_addr_in[LOWER_BITS-1:COL_BITS+BANK_BITS];
         row_out = mem_bus_addr_in[LOWER_BITS+ROW_BITS-1:LOWER_BITS];
+        // $display("%d %d %d %d", col_out, ba_out, bg_out, row_out);
     end
 endmodule
 

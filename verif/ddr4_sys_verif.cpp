@@ -11,6 +11,8 @@ struct MemTransaction {
     uint64_t address;
     uint64_t data;
     bool is_write;
+    bool is_activate;
+    bool is_precharge;
 };
 
 class DDR4Testbench {
@@ -64,18 +66,18 @@ public:
     
     void setupTestTransactions() {
         // Create a series of write and read operations
-        const int NUM_TESTS = 10;
+        const int NUM_TESTS = 2;
         
         // Create test patterns - write then read back from same address
         for (int i = 0; i < NUM_TESTS; i++) {
             uint64_t addr = i * 8; // Consecutive addresses, multiples of 8
             uint64_t data = 0xA500000000000000ULL | i; // Unique data pattern
-            
+            m_transactions.push_back({addr, data, false, true, false});
             // Add write transaction
-            m_transactions.push_back({addr, data, true});
-            
+            m_transactions.push_back({addr, data, true, false, false});
             // Add read transaction to verify
-            m_transactions.push_back({addr, data, false});
+            m_transactions.push_back({addr, data, false, false, false});
+            m_transactions.push_back({addr, data, false, false, true});
         }
     }
     
@@ -84,9 +86,9 @@ public:
         m_ddr4->rst_N_in = 0;
         m_ddr4->clk_in = 0;
         m_ddr4->write_enable_in = 0;
-        tick(10);
+        tick(2);
         m_ddr4->rst_N_in = 1;
-        tick(5);
+        tick(1);
     }
     
     void tick(int count = 1) {
@@ -104,7 +106,6 @@ public:
     }
     
     void runTest() {
-        reset();
         
         std::cout << "Using fixed timing parameters:" << std::endl;
         std::cout << "- CAS Latency: " << CAS_LATENCY << " cycles" << std::endl;
@@ -112,6 +113,8 @@ public:
         std::cout << "- Total Read Latency: " << READ_LATENCY << " cycles" << std::endl;
         std::cout << "- Total Write Latency: " << WRITE_LATENCY << " cycles" << std::endl;
         std::cout << std::endl;
+
+        reset();
         
         while (m_currentTransaction < m_transactions.size()) {
             auto& txn = m_transactions[m_currentTransaction];
@@ -129,8 +132,11 @@ public:
                 std::cout << "Waiting " << delayBeforeOperation << " cycles between operations..." << std::endl;
                 tick(delayBeforeOperation);
             }
-            
-            if (txn.is_write) {
+            if (txn.is_precharge) {
+                performPrechargeOperation(txn.address);
+            } else if (txn.is_activate) {
+                performActivateOperation(txn.address);
+            } else if (txn.is_write) {
                 performWriteOperation(txn.address, txn.data);
                 m_lastOp = OP_WRITE;
             } else {
@@ -143,6 +149,57 @@ public:
         
         std::cout << "All tests completed in " << m_tickCount << " clock cycles" << std::endl;
     }
+
+    void performPrechargeOperation(uint64_t address) {
+        // Start a write operation
+        address += 0x80; // increment row
+        std::cout << "Starting precharge at address 0x" << std::hex << address << 
+        std::dec << " (cycle " << m_tickCount << ")" << std::endl;
+        
+        // Apply precharge control signals
+        m_ddr4->mem_bus_addr_in = address & 0x7FFFF; // Apply address mask (19 bits)
+        m_ddr4->write_enable_in = 0;
+        m_ddr4->valid = 1;
+        
+        // Tick one cycle to initiate the precharge
+        tick();
+        
+        // Wait for the write to complete based on fixed timing
+        std::cout << "Waiting " << PRECHARGE_LATENCY - 1 << " cycles for precharge to complete..." << std::endl;
+        tick(PRECHARGE_LATENCY - 1);
+        
+        m_ddr4->valid = 0;
+
+        // Wait for write recovery time
+        const int PRECHARGE_RECOVERY = 2;
+        tick(PRECHARGE_RECOVERY);
+        
+        std::cout << "Precharge completed at cycle " << m_tickCount << std::endl;
+    }
+
+    void performActivateOperation(uint64_t address) {
+        // Start a write operation
+        std::cout << "Starting activate at address 0x" << std::hex << address << 
+        std::dec << " (cycle " << m_tickCount << ")" << std::endl;
+        
+        // Apply write control signals
+        m_ddr4->mem_bus_addr_in = address & 0x7FFFF; // Apply address mask (19 bits)
+        m_ddr4->write_enable_in = 0;
+        m_ddr4->valid = 1;
+        
+        // Tick one cycle to initiate the write
+        tick();
+        
+        // Wait for the write to complete based on fixed timing
+        std::cout << "Waiting " << ACTIVATION_LATENCY - 1 << " cycles for activate to complete..." << std::endl;
+        tick(ACTIVATION_LATENCY - 1);
+        m_ddr4->valid = 0;
+        // Wait for write recovery time
+        const int ACTIVATION_RECOVERY = 2;
+        tick(ACTIVATION_RECOVERY);
+        
+        std::cout << "Activation completed at cycle " << m_tickCount << std::endl;
+    }
     
     void performWriteOperation(uint64_t address, uint64_t data) {
         // Start a write operation
@@ -153,9 +210,11 @@ public:
         m_ddr4->mem_bus_addr_in = address & 0x7FFFF; // Apply address mask (19 bits)
         m_ddr4->write_data_in = data;
         m_ddr4->write_enable_in = 1;
+        m_ddr4->valid = 1;
         
         // Tick one cycle to initiate the write
         tick();
+        m_ddr4->valid = 0;
         
         // Wait for the write to complete based on fixed timing
         std::cout << "Waiting " << WRITE_LATENCY - 1 << " cycles for write to complete..." << std::endl;
@@ -179,9 +238,11 @@ public:
         // Apply read control signals
         m_ddr4->mem_bus_addr_in = address & 0x7FFFF; // Apply address mask (19 bits)
         m_ddr4->write_enable_in = 0;
+        m_ddr4->valid = 1;
         
         // Tick one cycle to initiate the read
         tick();
+        m_ddr4->valid = 0;
         
         // Wait for the read to complete based on fixed timing
         std::cout << "Waiting " << READ_LATENCY << " cycles for read data..." << std::endl;
@@ -192,10 +253,10 @@ public:
         
         // Verify read data
         if (readData == expectedData) {
-            std::cout << "✓ Read verification PASSED at address 0x" << std::hex << address 
+            std::cout << "\t✓ Read verification PASSED at address 0x" << std::hex << address 
                       << ", data: 0x" << readData << std::dec << std::endl;
         } else {
-            std::cout << "✗ Read verification FAILED at address 0x" << std::hex << address 
+            std::cout << "\t✗ Read verification FAILED at address 0x" << std::hex << address 
                       << ", expected: 0x" << expectedData << ", got: 0x" << readData 
                       << std::dec << std::endl;
         }

@@ -188,13 +188,14 @@ module ddr4_sdram_chip #(
         for (int i = 0; i < BANKS; i++) begin
             bank_inputs[i].command_set <= i == 32'(bank_idx);
         end
-
+        // $display("CMD: %b", command_bits);
         casez (command_bits)
             6'b01001?:    bank_inputs[bank_idx].command <= REFRESH;     // Refresh
             6'b010100:    bank_inputs[bank_idx].command <= PRE;     // Single Bank Precharge
-            6'b00????:    bank_inputs[bank_idx].command <= ACTIVATE; // Bank Activate (uses row index)
+            6'b00????:    begin bank_inputs[bank_idx].command <= ACTIVATE;end// Bank Activate (uses row index)
             6'b011000: begin
                 bank_inputs[bank_idx].command <= WRITE;   // Write
+                // $display("WRITING");
                 burst_count = 1;
                 bank_inputs[bank_idx].write_buffer[0] <= dqs;
                 bank_inputs[bank_idx].mask_buffer[0] <= dqm_in;
