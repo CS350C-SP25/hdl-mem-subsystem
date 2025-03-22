@@ -19,6 +19,8 @@
 // go unused. This is because DRAM is pipelined, and the synchronization is done
 // via. known latency times, rather than through handshake protocols. Handshake
 // protocols do not work well with bi-directional wires anyways.
+`timescale 1ns/1ps
+
 module last_level_cache #(
     parameter int A = 8,
     parameter int B = 64,
@@ -89,8 +91,7 @@ module last_level_cache #(
         .A(A),
         .B(B),
         .C(C),
-        .W(W), 
-        .ADDRESS_SIZE(PADDR_BITS) // not currently implemented in cache but should be 
+        .W(W)
     ) dut (
       .rst_N_in(rst_N_in),
       .clk_in(clk_in),
@@ -114,7 +115,8 @@ module last_level_cache #(
       .hc_ready_out(hc_ready_out),
       .hc_we_out(hc_we_out),
       .hc_addr_out(hc_addr_out),
-      .hc_value_out(hc_value_out)
+      .hc_value_out(hc_value_out),
+      .cache_line_in(_bus_val_out)
     );
 
     typedef enum logic [3:0] {

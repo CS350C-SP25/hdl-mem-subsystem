@@ -26,12 +26,14 @@ SCHEDULER_SRCS = --cc src/mem_control/bank_state.sv src/mem_control/comb_util.sv
 SDRAM_SRCS = --cc src/mem_control/sdram_controller.sv src/mem_control/bank_state.sv src/mem_control/comb_util.sv
 CACHE_SRCS = --cc --timing src/cache.sv src/testbenches/cache_tb.sv
 L1D_SRCS = --cc --timing src/l1_data_cache.sv # still adding more
+SD_CTRL_DIMM_SRCS = --cc --timing src/cache.sv src/last_level_cache.sv src/ddr4_dimm.sv src/sd_ctrl_dimm_tb.sv
 
 # Output binaries
 DIMM_BIN = obj_dir/Vddr4_dimm
 SCHEDULER_BIN = obj_dir/Vmem_scheduler
 SDRAM_BIN = obj_dir/Vsdram_controller
 CACHE_BIN = obj_dir/bin/Vcache
+SD_CTRL_DIMM_BIN = obj_dir/bin/Vsd_ctrl_dimm_tb
 
 # Default target (alias for dimm)
 all: dimm
@@ -50,7 +52,9 @@ sdram: $(SDRAM_BIN)
 cache: $(CACHE_BIN)
 	./$(CACHE_BIN)
 
-
+# Compile and run for System Controller and DIMM testbench
+sd_ctrl_dimm: $(SD_CTRL_DIMM_BIN)
+	./$(SD_CTRL_DIMM_BIN)
 
 # Compile with Verilator
 $(DIMM_BIN):
@@ -65,9 +69,12 @@ $(SDRAM_BIN):
 $(CACHE_BIN):
 	$(OBJCACHE) $(VERILATOR) $(VFLAGS) $(CACHE_SRCS)
 
+$(SD_CTRL_DIMM_BIN):
+	$(OBJCACHE) $(VERILATOR) $(VFLAGS) $(SD_CTRL_DIMM_SRCS)
+
 # Clean generated files
 clean:
-	rm -rf obj_dir $(DIMM_BIN) $(SCHEDULER_BIN) $(CACHE_BIN) *.log *.dmp *.vcd
+	rm -rf obj_dir $(DIMM_BIN) $(SCHEDULER_BIN) $(CACHE_BIN) $(SD_CTRL_DIMM_BIN) *.log *.dmp *.vcd
 
 clean-dimm:
 	rm -rf obj_dir/Vddr4_dimm *.log *.dmp *.vcd
@@ -81,4 +88,7 @@ clean-sdram:
 clean-cache:
 	rm -rf obj_dir/bin/Vcache
 
-.PHONY: all clean run dimm scheduler
+clean-sd-ctrl-dimm:
+	rm -rf obj_dir/bin/Vsd_ctrl_dimm_tb *.log *.dmp *.vcd
+
+.PHONY: all clean run dimm scheduler sdram cache sd_ctrl_dimm clean-dimm clean-scheduler clean-sdram clean-cache clean-sd-ctrl-dimm
