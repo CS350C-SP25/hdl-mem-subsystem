@@ -70,7 +70,7 @@ module last_level_cache #(
     logic sdram_valid_in;
     logic sdram_ready_in;
     logic [PADDR_BITS-1:0] sdram_addr_in;
-    logic [W-1:0] sdram_value_in;
+    logic [8*B-1:0] sdram_value_in;
     logic hc_we_out;
 
     // preliminary logics for scheduling onto the bus
@@ -182,11 +182,9 @@ module last_level_cache #(
         .val_in(_bus_val_out), // val to write if write
         .cmd_in(_bus_cmd_out),
 
-        .bank_group_out(),
-        .bank_out(),
         .act_out(lc_valid_in), // Command bit (read is resolving)
-        .dram_addr_out(),  // col (offset?)
-        .val_out(), //oops ITS TOO BIG. this is a cache line but the tight cache is looking for a WORD on the clock cycle, at best with DDR4 I need at least 2 words per cycle
+        .val_out(sdram_value_in),
+        .paddr_out(sdram_addr_in),
         .bursting(bursting_block), // set to HI when the dimm should not recieve any commands that will interfere with a burst
         .mem_bus_value_io(mem_bus_value_io)  // Load / Store value for memory module
     );

@@ -29,6 +29,28 @@ module address_parser #(
     end
 endmodule
 
+module dimm_to_paddr #(
+    parameter int ROW_BITS = 8,
+    parameter int COL_BITS = 4,
+    parameter int PADDR_BITS = 64, // word size
+    parameter int BANK_GROUPS = 4,
+    parameter int BANKS_PER_GROUP = 2
+) (
+    input logic [ROW_BITS-1:0] row_in,
+    input logic [COL_BITS-1:0] col_in,
+    input logic [$clog2(BANK_GROUPS)-1:0] bg_in,     // Bank group id
+    input logic [$clog2(BANKS_PER_GROUP)-1:0] ba_in,      // Bank id
+    output  logic [PADDR_BITS-1:0] mem_bus_addr_out,
+);
+    localparam BANK_BITS = $clog2(BANKS_PER_GROUP);
+    localparam BANK_GRP_BITS = $clog2(BANK_GROUPS);
+    localparam LOWER_BITS = COL_BITS+BANK_BITS+BANK_GRP_BITS;
+
+    always_comb begin
+        mem_bus_addr_out = {row_in, {BANK_GRP_BITS'bg_in}, {BANK_BITS'ba_in}, col_in};
+    end
+endmodule
+
 // submodule for handling memory request queues
 module mem_req_queue #(
     parameter QUEUE_SIZE=16,
@@ -196,10 +218,11 @@ module command_sender #(
     parameter int CAS_LATENCY = 22,
     parameter int ACTIVATION_LATENCY = 8,  // latency in cycles to activate row buffer
     parameter int PRECHARGE_LATENCY = 5,  // latency in cycles to precharge (clear row buffer)
-    parameter int BANK_GROUPS = 8,
-    parameter int BANKS_PER_GROUP = 8,       // banks per group
+    parameter int BANK_GROUPS = 4,
+    parameter int BANKS_PER_GROUP = 4,       // banks per group
     parameter int ROW_BITS = 8,    // bits to address rows
-    parameter int COL_BITS = 4     // bits to address columns
+    parameter int COL_BITS = 4,     // bits to address columns
+    parameter int PADDR_BITS = 64 // word size
 ) (
     input logic clk_in,
     input logic rst_N_in,
@@ -211,11 +234,9 @@ module command_sender #(
     input logic [7:0][63:0] val_in, // val to write if write
     input logic [2:0] cmd_in,
 
-    output logic [$clog2(BANK_GROUPS)-1:0] bank_group_out,
-    output logic [$clog2(BANKS_PER_GROUP)-1:0] bank_out,
     output logic act_out, // Command bit
-    output logic [16:0] dram_addr_out,  // row/col or special bits.
     output logic [7:0][63:0] val_out,
+    output logic [PADDR_BITS-1:0] paddr_out,
     output logic bursting, // set to HI when receiving/sending a burst to/from the DIMM
     inout logic [63:0] mem_bus_value_io  // Load / Store value for memory module
 );
@@ -244,10 +265,7 @@ module command_sender #(
 
     // Module for queueing memory requests
     typedef struct packed {
-        logic [$clog2(BANK_GROUPS)-1:0] bank_group;
-        logic [$clog2(BANKS_PER_GROUP)-1:0] bank;
-        logic [ROW_BITS-1:0] row;
-        logic [COL_BITS-1:0] col;
+        logic [PADDR_BITS-1:0] paddr;
         logic [31:0] cycle_counter; 
     } read_request_t;
 
@@ -296,35 +314,51 @@ module command_sender #(
         .dqs(mem_bus_value_io)  // Data ins / outs (from all dram chips)
     );
 
+    logic [PADDR_BITS-1:0] read_paddr;
+    dimm_to_paddr #(
+        .ROW_BITS(ROW_BITS),
+        .COL_BITS(COL_BITS),
+        .PADDR_BITS(PADDR_BITS), // word size
+        ) paddr_converter (
+        .row_in(row_in),
+        .col_in(col_in),
+        .bg_in(bank_group_in),     // Bank group id
+        .ba_in(bank_in),      // Bank id
+        .mem_bus_addr_out(read_paddr),
+    );
+
     always_ff @(posedge clk_in or negedge rst_N_in) begin
         if (!rst_N_in) begin
             cycle_counter = 0;
         end else begin
             if (cmd_in == READ) begin
-                req_in.bank_group = bank_group_in;
-                req_in.bank = bank_in;
-                req_in.row = row_in;
-                req_in.col = col_in;
+                req_in.paddr = read_paddr;
                 req_in.cycle_counter = cycle_counter;
                 enqueue_in = 1'b1;
             end else begin
                 enqueue_in = 1'b0;
             end
 
-            if (!empty && req_out.cycle_counter + CAS_LATENCY - 4 >= cycle_counter && req_out.cycle_counter + CAS_LATENCY + 4 < cycle_counter) begin
+            if ((!empty && req_out.cycle_counter + CAS_LATENCY - 5 >= cycle_counter && req_out.cycle_counter + CAS_LATENCY <= cycle_counter) 
+                || (read_burst_ready && burst_counter < 6)) begin
                 bursting <= 1'b1;
             end else begin
                 bursting <= 1'b0;
             end
 
-            if (!empty && req_out.cycle_counter + CAS_LATENCY == cycle_counter) begin
+            if (!empty && req_out.cycle_counter + CAS_LATENCY - 1 == cycle_counter) begin
                 read_burst_ready = 1'b1;
+                dequeue_in <= 1'b1;
+                //set the read addy out on next cock cycle
+
+            end else begin
+                dequeue_in <= 1'b0;
             end
 
             if (!empty && req_out.cycle_counter + CAS_LATENCY + 3 == cycle_counter) begin
-                dequeue_in = 1'b1;
+                act_out <= 1'b1;
             end else begin
-                dequeue_in=1'b0;
+                act_out = 1'b0;
             end
             cycle_counter <= cycle_counter + 1;
         end

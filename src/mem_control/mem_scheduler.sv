@@ -169,6 +169,10 @@ module request_scheduler #(
     endfunction
 
     logic [31:0] cycle_counter;
+    logic[31:0] last_read;
+    logic[31:0] last_read_t;
+    logic[31:0] last_write;
+    logic[31:0] last_write_t;
     logic [$clog2(BANK_GROUPS) + $clog2(BANKS_PER_GROUP) - 1:0] bank_idx;
     logic [$clog2(BANK_GROUPS)-1:0] bank_group_in;
     logic [$clog2(BANKS_PER_GROUP)-1:0] bank_in;
@@ -327,6 +331,7 @@ module request_scheduler #(
             cmd_out <= cmd_out_t;
             valid_out <= valid_out_t;
             last_read <= last_read_t;
+            last_write <= last_write_t;
             // $display("Read Queue Ready Top %b", read_params_out[17].ready_top_out.row);
             // $display("Activation Queue Pending Top %b", activation_params_out[17].pending_top_out.row);
             // $display("Activation Queue Ready Top %b", activation_params_out[17].pending_top_out.row);
@@ -342,8 +347,6 @@ module request_scheduler #(
         end
         assign read_prio = |read_prio_out;
     endgenerate
-    logic[31:0] last_read;
-    logic[31:0] last_read_t;
     always_comb begin
         done = 1'b0;
         valid_out_t = 1'b0;
@@ -354,6 +357,7 @@ module request_scheduler #(
         bank_out_t = 'b0;
         bank_group_out_t = 'b0;
         last_read_t = last_read;
+        last_write_t = last_write;
         bank_state_params_in.activate = '{default:0};
         bank_state_params_in.precharge =  '{default:0};
         bank_state = bank_state_params_out;
@@ -407,7 +411,7 @@ module request_scheduler #(
         if (cmd_ready) begin // DRAM has a one cycle slot for the SDRAM controller to send out the command, let's see which bank queue to send command out
             // Update params array
             if (read_prio) begin // are there any pending read requests that are older than write reqeusts?
-                if (last_read_t < cycle_counter - 4) begin // ensure that there has been at least 4 cycles since the last read command (bursting)
+                if (last_read < cycle_counter - 4) begin // ensure that there has been at least 4 cycles since the last read command (bursting)
                     process_bank_commands(
                         0,
                         read_params_in,
@@ -426,7 +430,7 @@ module request_scheduler #(
                     );
                     last_read_t = cycle_counter;
                 end
-            end else if (!bursting) begin
+            end else if (!bursting && last_write < cycle_counter - 4) begin
                 process_bank_commands(
                     1,
                     write_params_in,
@@ -443,6 +447,7 @@ module request_scheduler #(
                     bank_out_t,
                     bank_group_out_t
                 );
+                last_write_t = done ? cycle_counter : last_write;
                 if (!done) begin
                     process_bank_commands(
                         2,
