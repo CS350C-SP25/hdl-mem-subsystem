@@ -251,17 +251,6 @@ module command_sender #(
     
     // Trust the scheduler to not send commands that conflict with incoming data
     logic [3:0] burst_counter;
-    logic [16:0] dimm_addr_in;
-    dimm_addr_assembler #(
-        .ROW_BITS(ROW_BITS),    // bits to address rows
-        .COL_BITS(COL_BITS)
-    ) dimm_addr (
-        .cmd_in(cmd_in),
-        .row_in(row_in),
-        .col_in(col_in),
-        .addr(dimm_addr_in)
-    );
-
     // Commands enum
     typedef enum logic[2:0] {
         READ = 3'b000,
@@ -300,28 +289,6 @@ module command_sender #(
     );
     logic read_burst_ready;
     logic [COL_BITS-1:0] read_col_start;
-
-    ddr4_dimm # (
-        .CAS_LATENCY(CAS_LATENCY),  // latency in cycles to get a response from DRAM
-        .ACTIVATION_LATENCY(ACTIVATION_LATENCY),  // latency in cycles to activate row buffer
-        .PRECHARGE_LATENCY(PRECHARGE_LATENCY),  // latency in cycles to precharge (clear row buffer)
-        .ROW_BITS(ROW_BITS),  // log2(ROWS)
-        .COL_BITS(COL_BITS)  // log2(COLS)
-    ) dimm (
-        .clk_in(clk_in),
-        .rst_N_in(rst_N_in),  // reset FSMs
-        .cs_N_in(!valid_in),  // chip select. active low
-        // SDRAM specific inputs from memory bus
-        .cke_in(1'b1),
-        // note: addr_in[16:15:14] = { ras_n_in, cas_n_in, we_n_in }
-        .act_in(cmd_in != ACTIVATE),  // Activate dram inputs
-        .addr_in(dimm_addr_in),  // row/col. Needs two cycles.
-        .bg_in(bank_group_in),  // Bank group id
-        .ba_in(bank_in),  // Bank id
-        .dqm_in('0),  // Data mask in. Set to one to block masks
-        // InOut with SDRAM controller
-        .dqs(mem_bus_value_io)  // Data ins / outs (from all dram chips)
-    );
 
     logic [PADDR_BITS-1:0] read_paddr;
     dimm_to_paddr #(
