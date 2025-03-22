@@ -249,26 +249,15 @@ endmodule: mem_req_queue;
 //     inout logic [63:0] mem_bus_value_io  // Load / Store value for memory module
 // );
     
-//     // Trust the scheduler to not send commands that conflict with incoming data
-//     logic [3:0] burst_counter;
-//     logic [16:0] dimm_addr_in;
-//     dimm_addr_assembler #(
-//         .ROW_BITS(ROW_BITS),    // bits to address rows
-//         .COL_BITS(COL_BITS)
-//     ) dimm_addr (
-//         .cmd_in(cmd_in),
-//         .row_in(row_in),
-//         .col_in(col_in),
-//         .addr(dimm_addr_in)
-//     );
-
-//     // Commands enum
-//     typedef enum logic[2:0] {
-//         READ = 3'b000,
-//         WRITE = 3'b001,
-//         ACTIVATE = 3'b010,
-//         PRECHARGE = 3'b011
-//     } commands;
+    // Trust the scheduler to not send commands that conflict with incoming data
+    logic [3:0] burst_counter;
+    // Commands enum
+    typedef enum logic[2:0] {
+        READ = 3'b000,
+        WRITE = 3'b001,
+        ACTIVATE = 3'b010,
+        PRECHARGE = 3'b011
+    } commands;
 
 //     // Module for queueing memory requests
 //     typedef struct packed {
@@ -284,44 +273,22 @@ endmodule: mem_req_queue;
 //     logic [31:0] cycle_counter;
 //     read_request_t req_in, req_out;
 
-//     mem_req_queue #(
-//         .QUEUE_SIZE(32),
-//         .mem_request_t(read_request_t) // default placeholder
-//     ) read_queue(
-//         .clk_in(clk_in),
-//         .rst_in(!rst_N_in),
-//         .enqueue_in(enqueue_in),
-//         .dequeue_in(dequeue_in),
-//         .req_in(req_in),
-//         .cycle_count(cycle_counter),
-//         .req_out(req_out),
-//         .empty(empty),
-//         .full(full)
-//     );
-//     logic read_burst_ready;
-//     logic [COL_BITS-1:0] read_col_start;
-
-//     ddr4_dimm # (
-//         .CAS_LATENCY(CAS_LATENCY),  // latency in cycles to get a response from DRAM
-//         .ACTIVATION_LATENCY(ACTIVATION_LATENCY),  // latency in cycles to activate row buffer
-//         .PRECHARGE_LATENCY(PRECHARGE_LATENCY),  // latency in cycles to precharge (clear row buffer)
-//         .ROW_BITS(ROW_BITS),  // log2(ROWS)
-//         .COL_BITS(COL_BITS)  // log2(COLS)
-//     ) dimm (
-//         .clk_in(clk_in),
-//         .rst_N_in(rst_N_in),  // reset FSMs
-//         .cs_N_in(!valid_in),  // chip select. active low
-//         // SDRAM specific inputs from memory bus
-//         .cke_in(1'b1),
-//         // note: addr_in[16:15:14] = { ras_n_in, cas_n_in, we_n_in }
-//         .act_in(cmd_in != ACTIVATE),  // Activate dram inputs
-//         .addr_in(dimm_addr_in),  // row/col. Needs two cycles.
-//         .bg_in(bank_group_in),  // Bank group id
-//         .ba_in(bank_in),  // Bank id
-//         .dqm_in('0),  // Data mask in. Set to one to block masks
-//         // InOut with SDRAM controller
-//         .dqs(mem_bus_value_io)  // Data ins / outs (from all dram chips)
-//     );
+    mem_req_queue #(
+        .QUEUE_SIZE(32),
+        .mem_request_t(read_request_t) // default placeholder
+    ) read_queue(
+        .clk_in(clk_in),
+        .rst_in(!rst_N_in),
+        .enqueue_in(enqueue_in),
+        .dequeue_in(dequeue_in),
+        .req_in(req_in),
+        .cycle_count(cycle_counter),
+        .req_out(req_out),
+        .empty(empty),
+        .full(full)
+    );
+    logic read_burst_ready;
+    logic [COL_BITS-1:0] read_col_start;
 
 //     logic [PADDR_BITS-1:0] read_paddr;
 //     dimm_to_paddr #(
