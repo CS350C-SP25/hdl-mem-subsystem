@@ -23,7 +23,7 @@ VFLAGS = --binary -j $$(( `nproc` - 1 )) --trace --Mdir obj_dir/bin
 # Source files
 DIMM_SRCS = --cc src/ddr4_dimm.sv --exe src/dimm_tb2.cpp
 SCHEDULER_SRCS = --cc src/mem_control/bank_state.sv src/mem_control/comb_util.sv src/mem_control/mem_scheduler.sv src/mem_control/req_queue.sv src/testbenches/mem_scheduler_tb.sv
-SDRAM_SRCS = --cc src/mem_control/sdram_controller.sv src/mem_control/bank_state.sv src/mem_control/comb_util.sv
+SDRAM_SRCS = --cc src/mem_control/sdram_controller.sv src/ddr4_dimm.sv src/mem_control/bank_state.sv src/mem_control/comb_util.sv --exe src/testbenches/sdram_tb2.cpp
 CACHE_SRCS = --cc --timing src/cache.sv src/testbenches/cache_tb.sv
 L1D_SRCS = --cc --timing src/l1_data_cache.sv # still adding more
 

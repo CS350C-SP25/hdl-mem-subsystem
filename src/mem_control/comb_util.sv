@@ -29,32 +29,32 @@ module address_parser #(
     end
 endmodule
 
-module dimm_to_paddr #(
-    parameter int ROW_BITS = 8,
-    parameter int COL_BITS = 4,
-    parameter int PADDR_BITS = 64, // word size
-    parameter int BANK_GROUPS = 4,
-    parameter int BANKS_PER_GROUP = 2
-) (
-    input logic [ROW_BITS-1:0] row_in,
-    input logic [COL_BITS-1:0] col_in,
-    input logic [$clog2(BANK_GROUPS)-1:0] bg_in,     // Bank group id
-    input logic [$clog2(BANKS_PER_GROUP)-1:0] ba_in,      // Bank id
-    output  logic [PADDR_BITS-1:0] mem_bus_addr_out,
-);
-    localparam BANK_BITS = $clog2(BANKS_PER_GROUP);
-    localparam BANK_GRP_BITS = $clog2(BANK_GROUPS);
-    localparam LOWER_BITS = COL_BITS+BANK_BITS+BANK_GRP_BITS;
+// module dimm_to_paddr #(
+//     parameter int ROW_BITS = 8,
+//     parameter int COL_BITS = 4,
+//     parameter int PADDR_BITS = 64, // word size
+//     parameter int BANK_GROUPS = 4,
+//     parameter int BANKS_PER_GROUP = 2
+// ) (
+//     input logic [ROW_BITS-1:0] row_in,
+//     input logic [COL_BITS-1:0] col_in,
+//     input logic [$clog2(BANK_GROUPS)-1:0] bg_in,     // Bank group id
+//     input logic [$clog2(BANKS_PER_GROUP)-1:0] ba_in,      // Bank id
+//     output  logic [PADDR_BITS-1:0] mem_bus_addr_out
+// );
+//     localparam BANK_BITS = $clog2(BANKS_PER_GROUP);
+//     localparam BANK_GRP_BITS = $clog2(BANK_GROUPS);
+//     localparam LOWER_BITS = COL_BITS+BANK_BITS+BANK_GRP_BITS;
 
-    always_comb begin
-        mem_bus_addr_out = 64'({
-            row_in, 
-            bg_in[BANK_GRP_BITS-1:0], 
-            ba_in[BANK_BITS-1:0], 
-            col_in
-        });
-    end
-endmodule
+//     always_comb begin
+//         mem_bus_addr_out = 64'({
+//             row_in, 
+//             bg_in[BANK_GRP_BITS-1:0], 
+//             ba_in[BANK_BITS-1:0], 
+//             col_in
+//         });
+//     end
+// endmodule
 
 // submodule for handling memory request queues
 module mem_req_queue #(
@@ -182,223 +182,223 @@ endmodule: mem_req_queue;
 
 // endmodule
 
-module dimm_addr_assembler #(
-    parameter int ROW_BITS = 8,    // bits to address rows
-    parameter int COL_BITS = 4
-) (
-    input logic [2:0] cmd_in,
-    input logic [ROW_BITS-1:0] row_in,
-    input logic [COL_BITS-1:0] col_in,
-    output logic [16:0] addr
-);
-    typedef enum logic[2:0] {
-        READ = 3'b000,
-        WRITE = 3'b001,
-        ACTIVATE = 3'b010,
-        PRECHARGE = 3'b011
-    } commands;
+// module dimm_addr_assembler #(
+//     parameter int ROW_BITS = 8,    // bits to address rows
+//     parameter int COL_BITS = 4
+// ) (
+//     input logic [2:0] cmd_in,
+//     input logic [ROW_BITS-1:0] row_in,
+//     input logic [COL_BITS-1:0] col_in,
+//     output logic [16:0] addr
+// );
+//     typedef enum logic[2:0] {
+//         READ = 3'b000,
+//         WRITE = 3'b001,
+//         ACTIVATE = 3'b010,
+//         PRECHARGE = 3'b011
+//     } commands;
 
-    always_comb begin
-        case (cmd_in)
-            READ: begin
-                addr = {1'b1, 1'b0, 1'b1, 3'bz, 1'b0, {(10-COL_BITS){1'bz}}, col_in};
-            end
-            WRITE: begin
-                addr = {1'b1, 1'b0, 1'b0, 3'bz, 1'b0, {(10-COL_BITS){1'bz}}, col_in};
-            end
-            ACTIVATE: begin
-                addr = {{(17-ROW_BITS){1'b0}}, row_in};
-            end
-            PRECHARGE: begin
-                addr = {1'b0, 1'b1, 1'b0, 3'bz, 1'b0, {(10-COL_BITS){1'bz}}, col_in};
-            end
-            default:
-                addr = 17'bz;
-        endcase
-    end
+//     always_comb begin
+//         case (cmd_in)
+//             READ: begin
+//                 addr = {1'b1, 1'b0, 1'b1, 3'bz, 1'b0, {(10-COL_BITS){1'bz}}, col_in};
+//             end
+//             WRITE: begin
+//                 addr = {1'b1, 1'b0, 1'b0, 3'bz, 1'b0, {(10-COL_BITS){1'bz}}, col_in};
+//             end
+//             ACTIVATE: begin
+//                 addr = {{(17-ROW_BITS){1'b0}}, row_in};
+//             end
+//             PRECHARGE: begin
+//                 addr = {1'b0, 1'b1, 1'b0, 3'bz, 1'b0, {(10-COL_BITS){1'bz}}, col_in};
+//             end
+//             default:
+//                 addr = 17'bz;
+//         endcase
+//     end
     
 
-endmodule
+// endmodule
 
 
-// Module to send commands to DIMM and receive responses
-module command_sender #(
-    parameter int CAS_LATENCY = 22,
-    parameter int ACTIVATION_LATENCY = 8,  // latency in cycles to activate row buffer
-    parameter int PRECHARGE_LATENCY = 5,  // latency in cycles to precharge (clear row buffer)
-    parameter int BANK_GROUPS = 4,
-    parameter int BANKS_PER_GROUP = 4,       // banks per group
-    parameter int ROW_BITS = 8,    // bits to address rows
-    parameter int COL_BITS = 4,     // bits to address columns
-    parameter int PADDR_BITS = 64 // word size
-) (
-    input logic clk_in,
-    input logic rst_N_in,
-    input logic [$clog2(BANK_GROUPS)-1:0] bank_group_in,
-    input logic [$clog2(BANKS_PER_GROUP)-1:0] bank_in,
-    input logic [ROW_BITS-1:0] row_in,
-    input logic [COL_BITS-1:0] col_in,
-    input logic valid_in, // if not valid ignore
-    input logic [7:0][63:0] val_in, // val to write if write
-    input logic [2:0] cmd_in,
+// // Module to send commands to DIMM and receive responses
+// module command_sender #(
+//     parameter int CAS_LATENCY = 22,
+//     parameter int ACTIVATION_LATENCY = 8,  // latency in cycles to activate row buffer
+//     parameter int PRECHARGE_LATENCY = 5,  // latency in cycles to precharge (clear row buffer)
+//     parameter int BANK_GROUPS = 4,
+//     parameter int BANKS_PER_GROUP = 4,       // banks per group
+//     parameter int ROW_BITS = 8,    // bits to address rows
+//     parameter int COL_BITS = 4,     // bits to address columns
+//     parameter int PADDR_BITS = 64 // word size
+// ) (
+//     input logic clk_in,
+//     input logic rst_N_in,
+//     input logic [$clog2(BANK_GROUPS)-1:0] bank_group_in,
+//     input logic [$clog2(BANKS_PER_GROUP)-1:0] bank_in,
+//     input logic [ROW_BITS-1:0] row_in,
+//     input logic [COL_BITS-1:0] col_in,
+//     input logic valid_in, // if not valid ignore
+//     input logic [7:0][63:0] val_in, // val to write if write
+//     input logic [2:0] cmd_in,
 
-    output logic act_out, // Command bit
-    output logic [7:0][63:0] val_out,
-    output logic [PADDR_BITS-1:0] paddr_out,
-    output logic bursting, // set to HI when receiving/sending a burst to/from the DIMM
-    inout logic [63:0] mem_bus_value_io  // Load / Store value for memory module
-);
+//     output logic act_out, // Command bit
+//     output logic [7:0][63:0] val_out,
+//     output logic [PADDR_BITS-1:0] paddr_out,
+//     output logic bursting, // set to HI when receiving/sending a burst to/from the DIMM
+//     inout logic [63:0] mem_bus_value_io  // Load / Store value for memory module
+// );
     
-    // Trust the scheduler to not send commands that conflict with incoming data
-    logic [3:0] burst_counter;
-    logic [16:0] dimm_addr_in;
-    dimm_addr_assembler #(
-        .ROW_BITS(ROW_BITS),    // bits to address rows
-        .COL_BITS(COL_BITS)
-    ) dimm_addr (
-        .cmd_in(cmd_in),
-        .row_in(row_in),
-        .col_in(col_in),
-        .addr(dimm_addr_in)
-    );
+//     // Trust the scheduler to not send commands that conflict with incoming data
+//     logic [3:0] burst_counter;
+//     logic [16:0] dimm_addr_in;
+//     dimm_addr_assembler #(
+//         .ROW_BITS(ROW_BITS),    // bits to address rows
+//         .COL_BITS(COL_BITS)
+//     ) dimm_addr (
+//         .cmd_in(cmd_in),
+//         .row_in(row_in),
+//         .col_in(col_in),
+//         .addr(dimm_addr_in)
+//     );
 
-    // Commands enum
-    typedef enum logic[2:0] {
-        READ = 3'b000,
-        WRITE = 3'b001,
-        ACTIVATE = 3'b010,
-        PRECHARGE = 3'b011
-    } commands;
+//     // Commands enum
+//     typedef enum logic[2:0] {
+//         READ = 3'b000,
+//         WRITE = 3'b001,
+//         ACTIVATE = 3'b010,
+//         PRECHARGE = 3'b011
+//     } commands;
 
-    // Module for queueing memory requests
-    typedef struct packed {
-        logic [PADDR_BITS-1:0] paddr;
-        logic [31:0] cycle_counter; 
-        logic [COL_BITS-1:0] col;
-    } read_request_t;
+//     // Module for queueing memory requests
+//     typedef struct packed {
+//         logic [PADDR_BITS-1:0] paddr;
+//         logic [31:0] cycle_counter; 
+//         logic [COL_BITS-1:0] col;
+//     } read_request_t;
 
-    logic   enqueue_in,
-            dequeue_in,
-            empty,
-            full;
-    logic [31:0] cycle_counter;
-    read_request_t req_in, req_out;
+//     logic   enqueue_in,
+//             dequeue_in,
+//             empty,
+//             full;
+//     logic [31:0] cycle_counter;
+//     read_request_t req_in, req_out;
 
-    mem_req_queue #(
-        .QUEUE_SIZE(32),
-        .mem_request_t(read_request_t) // default placeholder
-    ) read_queue(
-        .clk_in(clk_in),
-        .rst_in(!rst_N_in),
-        .enqueue_in(enqueue_in),
-        .dequeue_in(dequeue_in),
-        .req_in(req_in),
-        .cycle_count(cycle_counter),
-        .req_out(req_out),
-        .empty(empty),
-        .full(full)
-    );
-    logic read_burst_ready;
-    logic [COL_BITS-1:0] read_col_start;
+//     mem_req_queue #(
+//         .QUEUE_SIZE(32),
+//         .mem_request_t(read_request_t) // default placeholder
+//     ) read_queue(
+//         .clk_in(clk_in),
+//         .rst_in(!rst_N_in),
+//         .enqueue_in(enqueue_in),
+//         .dequeue_in(dequeue_in),
+//         .req_in(req_in),
+//         .cycle_count(cycle_counter),
+//         .req_out(req_out),
+//         .empty(empty),
+//         .full(full)
+//     );
+//     logic read_burst_ready;
+//     logic [COL_BITS-1:0] read_col_start;
 
-    ddr4_dimm # (
-        .CAS_LATENCY(CAS_LATENCY),  // latency in cycles to get a response from DRAM
-        .ACTIVATION_LATENCY(ACTIVATION_LATENCY),  // latency in cycles to activate row buffer
-        .PRECHARGE_LATENCY(PRECHARGE_LATENCY),  // latency in cycles to precharge (clear row buffer)
-        .ROW_BITS(ROW_BITS),  // log2(ROWS)
-        .COL_BITS(COL_BITS)  // log2(COLS)
-    ) dimm (
-        .clk_in(clk_in),
-        .rst_N_in(rst_N_in),  // reset FSMs
-        .cs_N_in(!valid_in),  // chip select. active low
-        // SDRAM specific inputs from memory bus
-        .cke_in(1'b1),
-        // note: addr_in[16:15:14] = { ras_n_in, cas_n_in, we_n_in }
-        .act_in(cmd_in != ACTIVATE),  // Activate dram inputs
-        .addr_in(dimm_addr_in),  // row/col. Needs two cycles.
-        .bg_in(bank_group_in),  // Bank group id
-        .ba_in(bank_in),  // Bank id
-        .dqm_in('0),  // Data mask in. Set to one to block masks
-        // InOut with SDRAM controller
-        .dqs(mem_bus_value_io)  // Data ins / outs (from all dram chips)
-    );
+//     ddr4_dimm # (
+//         .CAS_LATENCY(CAS_LATENCY),  // latency in cycles to get a response from DRAM
+//         .ACTIVATION_LATENCY(ACTIVATION_LATENCY),  // latency in cycles to activate row buffer
+//         .PRECHARGE_LATENCY(PRECHARGE_LATENCY),  // latency in cycles to precharge (clear row buffer)
+//         .ROW_BITS(ROW_BITS),  // log2(ROWS)
+//         .COL_BITS(COL_BITS)  // log2(COLS)
+//     ) dimm (
+//         .clk_in(clk_in),
+//         .rst_N_in(rst_N_in),  // reset FSMs
+//         .cs_N_in(!valid_in),  // chip select. active low
+//         // SDRAM specific inputs from memory bus
+//         .cke_in(1'b1),
+//         // note: addr_in[16:15:14] = { ras_n_in, cas_n_in, we_n_in }
+//         .act_in(cmd_in != ACTIVATE),  // Activate dram inputs
+//         .addr_in(dimm_addr_in),  // row/col. Needs two cycles.
+//         .bg_in(bank_group_in),  // Bank group id
+//         .ba_in(bank_in),  // Bank id
+//         .dqm_in('0),  // Data mask in. Set to one to block masks
+//         // InOut with SDRAM controller
+//         .dqs(mem_bus_value_io)  // Data ins / outs (from all dram chips)
+//     );
 
-    logic [PADDR_BITS-1:0] read_paddr;
-    dimm_to_paddr #(
-        .ROW_BITS(ROW_BITS),
-        .COL_BITS(COL_BITS),
-        .PADDR_BITS(PADDR_BITS) // word size
-        ) paddr_converter (
-        .row_in(row_in),
-        .col_in(col_in),
-        .bg_in(bank_group_in[1:0]),     // Bank group id
-        .ba_in(bank_in[0:0]),      // Bank id
-        .mem_bus_addr_out(read_paddr)
-    );
+//     logic [PADDR_BITS-1:0] read_paddr;
+//     dimm_to_paddr #(
+//         .ROW_BITS(ROW_BITS),
+//         .COL_BITS(COL_BITS),
+//         .PADDR_BITS(PADDR_BITS) // word size
+//         ) paddr_converter (
+//         .row_in(row_in),
+//         .col_in(col_in),
+//         .bg_in(bank_group_in[1:0]),     // Bank group id
+//         .ba_in(bank_in[0:0]),      // Bank id
+//         .mem_bus_addr_out(read_paddr)
+//     );
 
-    always_ff @(posedge clk_in or negedge rst_N_in) begin
-        if (!rst_N_in) begin
-            cycle_counter = 0;
-        end else begin
-            if (cmd_in == READ) begin
-                req_in.paddr = read_paddr;
-                req_in.cycle_counter = cycle_counter;
-                req_in.col = col_in;
-                enqueue_in = 1'b1;
-            end else begin
-                enqueue_in = 1'b0;
-            end
+//     always_ff @(posedge clk_in or negedge rst_N_in) begin
+//         if (!rst_N_in) begin
+//             cycle_counter = 0;
+//         end else begin
+//             if (cmd_in == READ) begin
+//                 req_in.paddr = read_paddr;
+//                 req_in.cycle_counter = cycle_counter;
+//                 req_in.col = col_in;
+//                 enqueue_in = 1'b1;
+//             end else begin
+//                 enqueue_in = 1'b0;
+//             end
 
-            if ((!empty && req_out.cycle_counter + CAS_LATENCY - 5 >= cycle_counter && req_out.cycle_counter + CAS_LATENCY <= cycle_counter) 
-                || (read_burst_ready && burst_counter < 6)) begin
-                bursting <= 1'b1;
-            end else begin
-                bursting <= 1'b0;
-            end
+//             if ((!empty && req_out.cycle_counter + CAS_LATENCY - 5 >= cycle_counter && req_out.cycle_counter + CAS_LATENCY <= cycle_counter) 
+//                 || (read_burst_ready && burst_counter < 6)) begin
+//                 bursting <= 1'b1;
+//             end else begin
+//                 bursting <= 1'b0;
+//             end
 
-            if (!empty && req_out.cycle_counter + CAS_LATENCY - 1 == cycle_counter) begin
-                read_burst_ready = 1'b1;
-                dequeue_in <= 1'b1;
-                //set the read addy out on next cock cycle
-                paddr_out <= req_out.paddr;
-                read_col_start <= req_out.col;
-            end else begin
-                dequeue_in <= 1'b0;
-            end
+//             if (!empty && req_out.cycle_counter + CAS_LATENCY - 1 == cycle_counter) begin
+//                 read_burst_ready = 1'b1;
+//                 dequeue_in <= 1'b1;
+//                 //set the read addy out on next cock cycle
+//                 paddr_out <= req_out.paddr;
+//                 read_col_start <= req_out.col;
+//             end else begin
+//                 dequeue_in <= 1'b0;
+//             end
 
-            if (!empty && req_out.cycle_counter + CAS_LATENCY + 3 == cycle_counter) begin
-                act_out <= 1'b1;
-            end else begin
-                act_out = 1'b0;
-            end
-            cycle_counter <= cycle_counter + 1;
-        end
+//             if (!empty && req_out.cycle_counter + CAS_LATENCY + 3 == cycle_counter) begin
+//                 act_out <= 1'b1;
+//             end else begin
+//                 act_out = 1'b0;
+//             end
+//             cycle_counter <= cycle_counter + 1;
+//         end
 
-    end
+//     end
 
-    // Increment counter
-    logic read_bursting;
-    logic write_bursting;
-    always_ff @(negedge rst_N_in or posedge clk_in or negedge clk_in)
-        if (!rst_N_in) begin
-            burst_counter <= '0;
-            enqueue_in <= 0;
-            dequeue_in <= 0;
+//     // Increment counter
+//     logic read_bursting;
+//     logic write_bursting;
+//     always_ff @(negedge rst_N_in or posedge clk_in or negedge clk_in)
+//         if (!rst_N_in) begin
+//             burst_counter <= '0;
+//             enqueue_in <= 0;
+//             dequeue_in <= 0;
 
-        end else begin
-            if (read_burst_ready) begin
-                read_bursting <= 1'b1;
-            end else if (read_bursting) begin
-                val_out[(burst_counter + read_col_start)[2:0]] = mem_bus_value_io;
-                burst_counter <= burst_counter == 7 ? 0 : burst_counter + 1;
-                read_burst_ready = burst_counter != 7;
-                read_bursting <= burst_counter != 7;
-            end else if ((cmd_in == WRITE && valid_in) || write_bursting) begin
-                burst_counter <= burst_counter == 7 ? 0 : burst_counter + 1;
-                write_bursting <= burst_counter != 7;
-            end else begin
-                burst_counter = 'b0;
-            end
-        end
-        assign mem_bus_value_io = ((cmd_in == WRITE && valid_in) || write_bursting) ? val_in[burst_counter] : {(64){1'bz}};
-endmodule
+//         end else begin
+//             if (read_burst_ready) begin
+//                 read_bursting <= 1'b1;
+//             end else if (read_bursting) begin
+//                 val_out[(burst_counter + read_col_start)[2:0]] = mem_bus_value_io;
+//                 burst_counter <= burst_counter == 7 ? 0 : burst_counter + 1;
+//                 read_burst_ready = burst_counter != 7;
+//                 read_bursting <= burst_counter != 7;
+//             end else if ((cmd_in == WRITE && valid_in) || write_bursting) begin
+//                 burst_counter <= burst_counter == 7 ? 0 : burst_counter + 1;
+//                 write_bursting <= burst_counter != 7;
+//             end else begin
+//                 burst_counter = 'b0;
+//             end
+//         end
+//         assign mem_bus_value_io = ((cmd_in == WRITE && valid_in) || write_bursting) ? val_in[burst_counter] : {(64){1'bz}};
+// endmodule
