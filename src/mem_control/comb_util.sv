@@ -47,7 +47,12 @@ module dimm_to_paddr #(
     localparam LOWER_BITS = COL_BITS+BANK_BITS+BANK_GRP_BITS;
 
     always_comb begin
-        mem_bus_addr_out = {row_in, {BANK_GRP_BITS'bg_in}, {BANK_BITS'ba_in}, col_in};
+        mem_bus_addr_out = 64'({
+            row_in, 
+            bg_in[BANK_GRP_BITS-1:0], 
+            ba_in[BANK_BITS-1:0], 
+            col_in
+        });
     end
 endmodule
 
@@ -193,22 +198,25 @@ module dimm_addr_assembler #(
         PRECHARGE = 3'b011
     } commands;
 
-    case (cmd_in)
-        READ: begin
-            addr = {1'b1, 1'b0, 1'b1, 3'bz, 1'b0, {(10-COL_BITS)'bz}, col_in};
-        end
-        WRITE: begin
-            addr = {1'b1, 1'b0, 1'b0, 3'bz, 1'b0, {(10-COL_BITS)'bz}, col_in};
-        end
-        ACTIVATE: begin
-            addr = 16'{row_in};
-        end
-        PRECHARGE: begin
-            addr = {1'b0, 1'b1, 1'b0, 3'bz, 1'b0, {(10-COL_BITS)'bz}, col_in};
-        end
-        default:
-            addr = 17'bz;
-    endcase
+    always_comb begin
+        case (cmd_in)
+            READ: begin
+                addr = {1'b1, 1'b0, 1'b1, 3'bz, 1'b0, {(10-COL_BITS){1'bz}}, col_in};
+            end
+            WRITE: begin
+                addr = {1'b1, 1'b0, 1'b0, 3'bz, 1'b0, {(10-COL_BITS){1'bz}}, col_in};
+            end
+            ACTIVATE: begin
+                addr = {{(17-ROW_BITS){1'b0}}, row_in};
+            end
+            PRECHARGE: begin
+                addr = {1'b0, 1'b1, 1'b0, 3'bz, 1'b0, {(10-COL_BITS){1'bz}}, col_in};
+            end
+            default:
+                addr = 17'bz;
+        endcase
+    end
+    
 
 endmodule
 
@@ -242,8 +250,7 @@ module command_sender #(
 );
     
     // Trust the scheduler to not send commands that conflict with incoming data
-    logic [4:0] burst_counter;
-    logic [4:0] cycle_counter;
+    logic [3:0] burst_counter;
     logic [16:0] dimm_addr_in;
     dimm_addr_assembler #(
         .ROW_BITS(ROW_BITS),    // bits to address rows
@@ -267,6 +274,7 @@ module command_sender #(
     typedef struct packed {
         logic [PADDR_BITS-1:0] paddr;
         logic [31:0] cycle_counter; 
+        logic [COL_BITS-1:0] col;
     } read_request_t;
 
     logic   enqueue_in,
@@ -291,13 +299,14 @@ module command_sender #(
         .full(full)
     );
     logic read_burst_ready;
+    logic [COL_BITS-1:0] read_col_start;
 
-    ddr4_dimm #(
+    ddr4_dimm # (
         .CAS_LATENCY(CAS_LATENCY),  // latency in cycles to get a response from DRAM
         .ACTIVATION_LATENCY(ACTIVATION_LATENCY),  // latency in cycles to activate row buffer
         .PRECHARGE_LATENCY(PRECHARGE_LATENCY),  // latency in cycles to precharge (clear row buffer)
         .ROW_BITS(ROW_BITS),  // log2(ROWS)
-        .COL_BITS(COL_BITS),  // log2(COLS)
+        .COL_BITS(COL_BITS)  // log2(COLS)
     ) dimm (
         .clk_in(clk_in),
         .rst_N_in(rst_N_in),  // reset FSMs
@@ -318,13 +327,13 @@ module command_sender #(
     dimm_to_paddr #(
         .ROW_BITS(ROW_BITS),
         .COL_BITS(COL_BITS),
-        .PADDR_BITS(PADDR_BITS), // word size
+        .PADDR_BITS(PADDR_BITS) // word size
         ) paddr_converter (
         .row_in(row_in),
         .col_in(col_in),
-        .bg_in(bank_group_in),     // Bank group id
-        .ba_in(bank_in),      // Bank id
-        .mem_bus_addr_out(read_paddr),
+        .bg_in(bank_group_in[1:0]),     // Bank group id
+        .ba_in(bank_in[0:0]),      // Bank id
+        .mem_bus_addr_out(read_paddr)
     );
 
     always_ff @(posedge clk_in or negedge rst_N_in) begin
@@ -334,6 +343,7 @@ module command_sender #(
             if (cmd_in == READ) begin
                 req_in.paddr = read_paddr;
                 req_in.cycle_counter = cycle_counter;
+                req_in.col = col_in;
                 enqueue_in = 1'b1;
             end else begin
                 enqueue_in = 1'b0;
@@ -350,7 +360,8 @@ module command_sender #(
                 read_burst_ready = 1'b1;
                 dequeue_in <= 1'b1;
                 //set the read addy out on next cock cycle
-
+                paddr_out <= req_out.paddr;
+                read_col_start <= req_out.col;
             end else begin
                 dequeue_in <= 1'b0;
             end
@@ -371,7 +382,6 @@ module command_sender #(
     always_ff @(negedge rst_N_in or posedge clk_in or negedge clk_in)
         if (!rst_N_in) begin
             burst_counter <= '0;
-            clk_in <= 0;
             enqueue_in <= 0;
             dequeue_in <= 0;
 
@@ -379,7 +389,7 @@ module command_sender #(
             if (read_burst_ready) begin
                 read_bursting <= 1'b1;
             end else if (read_bursting) begin
-                val_out[burst_counter] = mem_bus_value_io;
+                val_out[(burst_counter + read_col_start)[2:0]] = mem_bus_value_io;
                 burst_counter <= burst_counter == 7 ? 0 : burst_counter + 1;
                 read_burst_ready = burst_counter != 7;
                 read_bursting <= burst_counter != 7;
@@ -387,8 +397,8 @@ module command_sender #(
                 burst_counter <= burst_counter == 7 ? 0 : burst_counter + 1;
                 write_bursting <= burst_counter != 7;
             end else begin
-                burst_counter = 1'b0;
+                burst_counter = 'b0;
             end
         end
-        assign mem_bus_value_io = ((cmd_in == WRITE && valid_in) || write_bursting) ? val_in[burst_counter] : {(63){1'bz}};
+        assign mem_bus_value_io = ((cmd_in == WRITE && valid_in) || write_bursting) ? val_in[burst_counter] : {(64){1'bz}};
 endmodule

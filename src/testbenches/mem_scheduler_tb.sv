@@ -14,6 +14,7 @@ module request_scheduler_tb;
     logic write_in;
     logic [511:0] val_in;
     logic cmd_ready;
+    logic bursting;
     
     logic [PADDR_BITS-1:0] addr_out;
     logic [$clog2(BANK_GROUPS)-1:0] bank_group_out; // BANK_GROUPS = 8
@@ -44,6 +45,7 @@ module request_scheduler_tb;
         .write_in(write_in),
         .val_in(val_in),
         .cmd_ready(cmd_ready),
+        .bursting(bursting),
         .addr_out(addr_out),
         .bank_group_out(bank_group_out),
         .bank_out(bank_out),
