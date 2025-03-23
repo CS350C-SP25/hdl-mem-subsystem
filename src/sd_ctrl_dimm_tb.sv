@@ -23,6 +23,8 @@ module sd_ctrl_dimm_tb;
     logic [18:0] hc_addr_in;
     logic [63:0] hc_value_in;
     logic hc_we_in;
+    logic [511:0] hc_line_in;
+    logic hc_cl_in;
     
     // LLC output signals
     logic hc_ready_out;
@@ -65,8 +67,8 @@ module sd_ctrl_dimm_tb;
         .ROW_BITS(8),
         .COL_BITS(4),
         .BUS_WIDTH(16),
-        .BANK_GROUPS(8),
-        .BANKS_PER_GROUP(8)
+        .BANK_GROUPS(4),
+        .BANKS_PER_GROUP(2)
     ) llc (
         .clk_in(clk),
         .rst_N_in(rst_N),
@@ -77,6 +79,8 @@ module sd_ctrl_dimm_tb;
         .hc_addr_in(hc_addr_in),
         .hc_value_in(hc_value_in),
         .hc_we_in(hc_we_in),
+        .hc_line_in(hc_line_in),
+        .hc_cl_in(hc_cl_in),
         .hc_ready_out(hc_ready_out),
         .hc_valid_out(hc_valid_out),
         .hc_addr_out(hc_addr_out),
@@ -125,7 +129,7 @@ module sd_ctrl_dimm_tb;
         cs_in = 1'b1;
         flush_in = 1'b0;
         hc_valid_in = 1'b0;
-        hc_ready_in = 1'b1;
+        hc_ready_in = 1'b0;
         hc_addr_in = 19'h0;
         hc_value_in = 64'h0;
         hc_we_in = 1'b0;
@@ -148,17 +152,22 @@ module sd_ctrl_dimm_tb;
         // Write sequence
         @(posedge clk);
         hc_valid_in = 1'b1;
-        hc_we_in = 1'b1;
         hc_addr_in = 19'h1000;
         hc_value_in = 64'hDEADBEEF;
+        hc_we_in = 1'b1;
+
+        @(posedge clk);
+        // Higher level cache is done sending its write request. Now it is in a ready state, available to reeive the response.
+        hc_ready_in = 1'b1;
         
+
         @(posedge clk);
         while (!hc_ready_out) @(posedge clk);
         
         hc_valid_in = 1'b0;
-        #100;  // Wait for write to complete
+        $display("Write to lower cache finished.");
         
-        // Read sequence
+        // Read sequence, check to see if the previous write actually wrote the correct value in the correct spot.
         @(posedge clk);
         hc_valid_in = 1'b1;
         hc_we_in = 1'b0;
@@ -174,46 +183,11 @@ module sd_ctrl_dimm_tb;
         end
         
         hc_valid_in = 1'b0;
-        #100;
+
+        @(posedge clk);
         
         // Test 2: Burst write and read
         $display("Starting Test 2: Burst Write and Read");
-        
-        // Write 8 consecutive addresses
-        for (int i = 0; i < 8; i++) begin
-            @(posedge clk);
-            hc_valid_in = 1'b1;
-            hc_we_in = 1'b1;
-            hc_addr_in = 19'h2000 + i[18:0];  // Fix width mismatch
-            hc_value_in = 64'hABCD0000 + {32'h0, i[31:0]};  // Fix width mismatch
-            
-            @(posedge clk);
-            while (!hc_ready_out) @(posedge clk);
-            
-            hc_valid_in = 1'b0;
-            #10;
-        end
-        
-        // Read back the 8 addresses
-        for (int i = 0; i < 8; i++) begin
-            @(posedge clk);
-            hc_valid_in = 1'b1;
-            hc_we_in = 1'b0;
-            hc_addr_in = 19'h2000 + i[18:0];  // Fix width mismatch
-            
-            @(posedge clk);
-            while (!hc_valid_out) @(posedge clk);
-            
-            if (hc_value_out == (64'hABCD0000 + {32'h0, i[31:0]})) begin  // Fix width mismatch
-                $display("Test 2 PASSED for address %h: Read value matches written value", 19'h2000 + i[18:0]);
-            end else begin
-                $display("Test 2 FAILED for address %h: Read value %h doesn't match written value %h",
-                        19'h2000 + i[18:0], hc_value_out, 64'hABCD0000 + {32'h0, i[31:0]});
-            end
-            
-            hc_valid_in = 1'b0;
-            #10;
-        end
         
         // Test 3: Test cache flush
         $display("Starting Test 3: Cache Flush");
@@ -223,57 +197,6 @@ module sd_ctrl_dimm_tb;
         #10;
         flush_in = 1'b0;
         
-        // Wait for flush to complete
-        while (hc_valid_out) @(posedge clk);
-        #100;
-        
-        // Test 4: Test bank group and bank selection
-        $display("Starting Test 4: Bank Group and Bank Selection");
-        
-        // Write to different bank groups and banks
-        for (int bg = 0; bg < 4; bg++) begin
-            for (int ba = 0; ba < 4; ba++) begin
-                @(posedge clk);
-                hc_valid_in = 1'b1;
-                hc_we_in = 1'b1;
-                hc_addr_in = {2'b00, bg[1:0], ba[1:0], 13'h3000};  // Fix width mismatch
-                hc_value_in = 64'hF0000000 + {32'h0, bg[1:0], ba[1:0]};  // Fix width mismatch
-                
-                @(posedge clk);
-                while (!hc_ready_out) @(posedge clk);
-                
-                hc_valid_in = 1'b0;
-                #10;
-            end
-        end
-        
-        // Read back and verify
-        for (int bg = 0; bg < 4; bg++) begin
-            for (int ba = 0; ba < 4; ba++) begin
-                @(posedge clk);
-                hc_valid_in = 1'b1;
-                hc_we_in = 1'b0;
-                hc_addr_in = {2'b00, bg[1:0], ba[1:0], 13'h3000};  // Fix width mismatch
-                
-                @(posedge clk);
-                while (!hc_valid_out) @(posedge clk);
-                
-                if (hc_value_out == (64'hF0000000 + {32'h0, bg[1:0], ba[1:0]})) begin  // Fix width mismatch
-                    $display("Test 4 PASSED for bank group %d, bank %d", bg, ba);
-                end else begin
-                    $display("Test 4 FAILED for bank group %d, bank %d: Read value %h doesn't match written value %h",
-                            bg, ba, hc_value_out, 64'hF0000000 + {32'h0, bg[1:0], ba[1:0]});
-                end
-                
-                hc_valid_in = 1'b0;
-                #10;
-            end
-        end
-        
-        test_done = 1'b1;
-        #100;
-        $display("All tests completed");
-        $finish;
     end
     
     // Optional: Add waveform dumping

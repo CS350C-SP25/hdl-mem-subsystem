@@ -20,6 +20,14 @@ VERILATOR ?= /u/nate/verilator
 # Flags
 VFLAGS = --binary -j $$(( `nproc` - 1 )) --trace
 
+# Target-specific flags
+DIMM_VFLAGS = $(VFLAGS) --top-module ddr4_dimm
+SCHEDULER_VFLAGS = $(VFLAGS) --top-module mem_scheduler_tb
+LLC_VFLAGS = $(VFLAGS) --top-module last_level_cache
+SDRAM_VFLAGS = $(VFLAGS) --top-module ddr4_system_tb
+CACHE_VFLAGS = $(VFLAGS) --top-module cache
+SD_CTRL_DIMM_VFLAGS = $(VFLAGS) --top-module sd_ctrl_dimm_tb
+
 # Source files
 DIMM_SRCS = --cc src/ddr4_dimm.sv --exe verif/dimm_tb2.cpp
 SCHEDULER_SRCS = --cc src/mem_control/bank_state.sv src/mem_control/comb_util.sv src/mem_control/mem_scheduler.sv src/mem_control/req_queue.sv src/testbenches/mem_scheduler_tb.sv
@@ -63,22 +71,22 @@ sd_ctrl_dimm: $(SD_CTRL_DIMM_BIN)
 
 # Compile with Verilator
 $(DIMM_BIN):
-	$(OBJCACHE) $(VERILATOR) $(VFLAGS) $(DIMM_SRCS)
+	$(OBJCACHE) $(VERILATOR) $(DIMM_VFLAGS) $(DIMM_SRCS)
 
 $(SCHEDULER_BIN):
-	$(OBJCACHE) $(VERILATOR) $(VFLAGS) $(SCHEDULER_SRCS)
+	$(OBJCACHE) $(VERILATOR) $(SCHEDULER_VFLAGS) $(SCHEDULER_SRCS)
 
 $(LLC_BIN):
-	$(OBJCACHE) $(VERILATOR) $(VFLAGS) $(LLC_SRCS)
+	$(OBJCACHE) $(VERILATOR) $(LLC_VFLAGS) $(LLC_SRCS)
 
 $(SDRAM_BIN):
-	$(OBJCACHE) $(VERILATOR) $(VFLAGS) $(SDRAM_SRCS)
+	$(OBJCACHE) $(VERILATOR) $(SDRAM_VFLAGS) $(SDRAM_SRCS)
 
 $(CACHE_BIN):
-	$(OBJCACHE) $(VERILATOR) $(VFLAGS) $(CACHE_SRCS)
+	$(OBJCACHE) $(VERILATOR) $(CACHE_VFLAGS) $(CACHE_SRCS)
 
 $(SD_CTRL_DIMM_BIN):
-	$(OBJCACHE) $(VERILATOR) $(VFLAGS) $(SD_CTRL_DIMM_SRCS)
+	$(OBJCACHE) $(VERILATOR) $(SD_CTRL_DIMM_VFLAGS) $(SD_CTRL_DIMM_SRCS)
 
 # Clean generated files
 clean:

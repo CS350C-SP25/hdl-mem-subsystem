@@ -171,7 +171,7 @@ module ddr4_sdram_controller #(
             send_dram <= send_dram_t;
             send <= req_out.cycle_counter < cycle_counter;
             bg_out <= bg;
-            ba_out <= {1'b0, ba};
+            ba_out <= ba;
             
             if (cmd != 3'b111) begin
                 cs_N_out <= '0;
