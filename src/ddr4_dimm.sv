@@ -195,7 +195,7 @@ module ddr4_sdram_chip #(
             6'b00????:    begin bank_inputs[bank_idx].command <= ACTIVATE;end// Bank Activate (uses row index)
             6'b011000: begin
                 bank_inputs[bank_idx].command <= WRITE;   // Write
-                // $display("WRITING");
+                $display("[DIMM] Writing %d %x", bank_idx, dqs);
                 burst_count = 1;
                 bank_inputs[bank_idx].write_buffer[0] <= dqs;
                 bank_inputs[bank_idx].mask_buffer[0] <= dqm_in;
@@ -206,7 +206,7 @@ module ddr4_sdram_chip #(
                 bank_inputs[bank_idx].write_buffer[0] <= dqs;
                 bank_inputs[bank_idx].mask_buffer[0] <= dqm_in;
             end
-            6'b011010:    bank_inputs[bank_idx].command <= READ;    // Read
+            6'b011010:    begin bank_inputs[bank_idx].command <= READ; $display("[DIMM] Reading"); end   // Read
             6'b011011:    bank_inputs[bank_idx].command <= READPRE; // Read with Auto-Precharge
             default: begin
                 bank_inputs[bank_idx].command <= IDLE;
@@ -356,8 +356,10 @@ module sdram_bank #(
         if (!burst_end && rst_N_in) begin
             if (!burst_write) begin
                 next_read = row_buffer[{col_idx[COL_BITS-1:3], burst_current_val}];
+                // $display("NEXT READ ASSIGNED %x %d %d", next_read, active_row, col_idx);
             end else begin
                 row_buffer[{col_idx[COL_BITS-1:3], burst_current_val}] = (row_buffer[{col_idx[COL_BITS-1:3], burst_current_val}] & mask_buffer[burst_current_val]) | (write_buffer[burst_current_val] & ~mask_buffer[burst_current_val]);
+                // $display("WRITING %x %x to %d %d", write_buffer[burst_current_val], row_buffer[{col_idx[COL_BITS-1:3], burst_current_val}], active_row, col_idx);
             end
             if (burst_current_val == burst_end_val) begin
                 burst_end = 1'b1;

@@ -33,8 +33,8 @@ private:
     const int READ_TO_WRITE_DELAY = 10;  // tRTW parameter
     
     // Calculated timing
-    const int WRITE_LATENCY = ACTIVATION_LATENCY + CAS_LATENCY;  // ACT to data
-    const int READ_LATENCY = ACTIVATION_LATENCY + CAS_LATENCY;   // ACT to data
+    const int WRITE_LATENCY = CAS_LATENCY;  // ACT to data
+    const int READ_LATENCY = CAS_LATENCY;   // ACT to data
     
     // Operation type for tracking
     enum OpType { OP_NONE, OP_READ, OP_WRITE };
@@ -246,7 +246,7 @@ public:
         
         // Wait for the read to complete based on fixed timing
         std::cout << "Waiting " << READ_LATENCY << " cycles for read data..." << std::endl;
-        tick(READ_LATENCY);
+        tick(READ_LATENCY+2);
         
         // Capture read data
         uint64_t readData = m_ddr4->read_data_out;

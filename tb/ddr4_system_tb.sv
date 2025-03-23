@@ -52,7 +52,7 @@ module ddr4_system_tb(
   assign read_data = mem_bus_value_io;
   
   // Signals between controller and DIMM
-  logic cs_N = 1'b0;
+  logic cs_N;
   logic act;
   logic [16:0] addr;
   logic [1:0] bg;
@@ -87,6 +87,7 @@ module ddr4_system_tb(
     .bg_out(bg),
     .ba_out(ba),
     .dqm_out(dqm),
+    .cs_N_out(cs_N),
     .mem_bus_ready_out(mem_bus_ready_out),
     .mem_bus_valid_out(mem_bus_valid_out),
     .dqs(dqs)
