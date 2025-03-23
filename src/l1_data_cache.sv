@@ -57,13 +57,17 @@ module l1_data_cache #(
   typedef struct packed {
     logic valid;
     logic [PADDR_SIZE-1:0] paddr;
-    logic [63:0] vaddr;
     logic we;
     logic [63:0] data;
     logic [TAG_BITS-1:0] tag;
   } mshr_entry_t;
 
   mshr_entry_t mshr_entries[MSHR_COUNT-1:0];
+
+  // Add enqueue and dequeue signals for each MSHR queue
+  logic [MSHR_COUNT-1:0] mshr_enqueue;
+  logic [MSHR_COUNT-1:0] mshr_dequeue;
+
 
   typedef enum logic [2:0] {
     IDLE,
@@ -194,6 +198,26 @@ module l1_data_cache #(
       end
     end
   end
+
+  genvar i;
+  generate
+    for (i = 0; i < MSHR_COUNT; i++) begin : mshr_queues
+      mem_req_queue #(
+          .QUEUE_SIZE(16),
+          .mem_request_t(mshr_entry_t)
+      ) mshr_queue_inst (
+          .clk_in(clk_in),
+          .rst_in(!rst_N_in),
+          .enqueue_in(mshr_enqueue[i]),
+          .dequeue_in(mshr_dequeue[i]),
+          .req_in(mshr_entries[i]),
+          .cycle_count(32'd0),  // dummy input, needs to be connected properly
+          .req_out(),  // dummy output, needs to be connected properly
+          .empty(),  // dummy output, needs to be connected properly
+          .full()  // dummy output, needs to be connected properly
+      );
+    end
+  endgenerate
 
   assign lsu_valid_out = lsu_valid_out_reg;
   assign lsu_ready_out = lsu_ready_out_reg;

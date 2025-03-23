@@ -35,7 +35,7 @@ SCHEDULER_SRCS = --cc src/mem_control/bank_state.sv src/mem_control/comb_util.sv
 LLC_SRCS = --cc src/last_level_cache.sv src/mem_control/bank_state.sv src/mem_control/comb_util.sv src/mem_control/mem_scheduler.sv src/mem_control/req_queue src/cache.sv
 SDRAM_SRCS = --cc tb/ddr4_system_tb.sv src/mem_control/sdram_controller.sv src/ddr4_dimm.sv src/mem_control/bank_state.sv src/mem_control/comb_util.sv --exe verif/ddr4_sys_verif.cpp
 CACHE_SRCS = --cc --timing src/cache.sv src/testbenches/cache_tb.sv
-L1D_SRCS = --cc --timing src/l1_data_cache.sv # still adding more
+L1D_SRCS = --cc --timing src/l1_data_cache.sv src/mem_control/comb_util.sv # still adding more
 SD_CTRL_DIMM_SRCS = --cc --timing tb/llc_dimm_tb.sv src/cache.sv src/last_level_cache.sv src/ddr4_dimm.sv src/mem_control/bank_state.sv src/mem_control/comb_util.sv src/mem_control/mem_scheduler.sv src/mem_control/req_queue.sv src/mem_control/sdram_controller.sv --exe verif/llc_dimm_verif.cpp
 
 # Output binaries
