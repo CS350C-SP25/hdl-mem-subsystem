@@ -21,8 +21,8 @@ module ddr4_sdram_controller #(
 
     // Following parameters added by us
     parameter int BUS_WIDTH = 16,  // bus width per chip
-    parameter int BANK_GROUPS = 8,
-    parameter int BANKS_PER_GROUP = 8,
+    parameter int BANK_GROUPS = 4,
+    parameter int BANKS_PER_GROUP = 4,
     parameter int BANKS = BANK_GROUPS * BANKS_PER_GROUP
 ) (
     // Generic
@@ -43,6 +43,7 @@ module ddr4_sdram_controller #(
     output logic [63:0] dqm_out,  // Data mask in. Set to one to block masks
     output logic mem_bus_ready_out,  // Ready to receive info from LLC
     output logic mem_bus_valid_out,  // DRAM info is ready for LLC
+    output logic cs_N_out, // cs_N for DIMM
     // Inouts to DDR4 SDRAM
     inout logic [63:0] dqs  // Data ins/outs from all dram chips
 );
@@ -78,11 +79,13 @@ module ddr4_sdram_controller #(
     logic [$clog2(BANKS_PER_GROUP)-1:0] ba;
     logic [$clog2(BANKS)-1:0] b_idx;
     logic we; // write enable, send this on the first bit of paddr
-    logic [1:0] cmd;
+    logic [2:0] cmd;
     logic [1:0] state; // 0 row_ready 1 col_ready
 
     logic send_t;
     logic send_dram_t;
+    logic send_dram;
+    logic send;
     logic [63:0] mem_bus_value_io_t; // when sending value back through mem_bus for a read
     logic act_out_t;  // Activate sdram, when this is high, we need to set RAS,CAS,WE
     logic [16:0] dram_addr_out_t;  // row/col or special bits.
@@ -100,8 +103,8 @@ module ddr4_sdram_controller #(
     assign b_idx = (bg * BANKS_PER_GROUP[$clog2(BANK_GROUPS) + $clog2(BANKS_PER_GROUP) - 1:0]) + {{$clog2(BANK_GROUPS){1'b0}}, ba};
     assign we = mem_bus_addr_in[PADDR_BITS-1];
     assign state_params_in.row_address.row_out = row;
-    assign mem_bus_value_io = send_t ? mem_bus_value_io_out : 'z;
-    assign dqs = send_dram_t ? dqs_out : 'z;
+    assign mem_bus_value_io = send ? mem_bus_value_io_out : 'z;
+    assign dqs = send_dram ? dqs_out : 'z;
 
     sdram_bank_state #(
         .ROW_WIDTH(ROW_BITS),
@@ -113,7 +116,7 @@ module ddr4_sdram_controller #(
         .bank_row_t(bank_row_t)
     ) _sdram_bank_state (
         .clk(clk_in),
-        .rst(rst_N_in),
+        .rst(~rst_N_in),
         .precharge(state_params_in.precharge),
         .activate(state_params_in.activate),
         .row_address(state_params_in.row_address),
@@ -142,7 +145,7 @@ module ddr4_sdram_controller #(
         .mem_request_t(read_request_t) // default placeholder
     ) read_queue(
         .clk_in(clk_in),
-        .rst_in(rst_N_in),
+        .rst_in(!rst_N_in),
         .enqueue_in(enqueue_in),
         .dequeue_in(dequeue_in),
         .req_in(req_in),
@@ -153,40 +156,65 @@ module ddr4_sdram_controller #(
     );
 
     always_ff @(posedge clk_in or posedge rst_N_in) begin
-        if (rst_N_in) begin
+        if (!rst_N_in) begin
             state <= '0;
             cycle_counter <= '0;
         end else begin
+            //$display("tick");
             addr <= mem_bus_addr_in;
             value <= mem_bus_value_io;
             cycle_counter <= cycle_counter + 1;
+            act_out <= act_out_t;
+            dram_addr_out <= dram_addr_out_t;
+            dqm_out <= dqm_out_t;
             dqs_out <= dqs_t;
-            mem_bus_value_io_out <= mem_bus_value_io_t;
+            send_dram <= send_dram_t;
+            send <= req_out.cycle_counter < cycle_counter;
+            bg_out <= bg;
+            ba_out <= {1'b0, ba};
+            
+            if (cmd != 3'b111) begin
+                cs_N_out <= '0;
+                $display("[SDRAM_CTRL] Performing cmd: %b on bank_idx %d, row %d", cmd, b_idx, row);
+            end else begin
+                cs_N_out <= '1;
+            end
         end
     end
 
+    always_ff @(negedge clk_in) begin
+        mem_bus_value_io_out <= dqs;
+        // if (req_out.read && req_out.cycle_counter < cycle_counter + 1) begin
+        //     // $display("Mem bus value io %x", dqs);
+        // end
+    end
+    // TODO posedge handle bursting
+
     always_comb begin
+        // $display(mem_bus_addr_in);
         req_in.read = 0;
         req_in.cycle_counter = 0;
         enqueue_in = 0;
         dequeue_in = 0;
         send_dram_t = 0;
-        cmd = 2'b00;
+        cmd = 3'b111;
         act_out_t = 0;
         dram_addr_out_t = '0;
         dqs_t = '0;
-        state_params_in.precharge = state_params_out.ready_to_access;
-        state_params_in.activate = state_params_out.active_bank;
+        state_params_in.precharge = '0;
+        state_params_in.activate = '0;
         state_params_in.row_address.row_out = '0;
         send_t = 0;
         mem_bus_value_io_t = '0;
         // check, then decide what command to issue
         if (mem_bus_valid_in) begin
             // row-issue ready, lets determine which command to issue
-            if (state_params_out.active_bank[b_idx] && 
+            // $display("%d %d", state_params_out.blocked[b_idx], state_params_out.active_bank[b_idx]);
+            if (state_params_out.blocked[b_idx]) begin
+            end else if (state_params_out.active_bank[b_idx] && 
                 state_params_out.active_row_out[b_idx].row_out == row) begin
                 // ready to perform r/w
-                cmd = {1'b0, we};
+                cmd = {2'b0, we};
                 act_out_t = 1;
                 dram_addr_out_t = {1'b1, 1'b0, !we, {{14-COL_BITS}{1'b0}}, col};
                 if (we) begin
@@ -194,21 +222,19 @@ module ddr4_sdram_controller #(
                     send_dram_t = 1;
                 end
                 req_in.read = !we;
-                req_in.cycle_counter = cycle_counter + 1; // read/write latency temp set to 1
+                req_in.cycle_counter = cycle_counter + CAS_LATENCY + 1; // read/write latency temp set to 1
             end else if (state_params_out.active_bank[b_idx]) begin
                 // need to precharge
-                cmd = 2'b11;
+                cmd = 3'b11;
                 act_out_t = 1;
                 dram_addr_out_t = {1'b0, 1'b1, 1'b0, {{14-ROW_BITS}{1'b0}}, row};
-                state_params_in.precharge = state_params_out.ready_to_access;
                 state_params_in.precharge[b_idx] = 1'b1;
                 req_in.cycle_counter = cycle_counter + PRECHARGE_LATENCY;
             end else begin
                 // need to activate
-                cmd = 2'b10;
+                cmd = 3'b10;
                 act_out_t = 0;
                 dram_addr_out_t = {{{17-ROW_BITS}{1'b0}}, row};
-                state_params_in.activate = state_params_out.active_bank;
                 state_params_in.activate[b_idx] = 1'b1;
                 state_params_in.row_address = row;
                 req_in.cycle_counter = cycle_counter + ACTIVATION_LATENCY;
@@ -222,6 +248,7 @@ module ddr4_sdram_controller #(
             if (req_out.read) begin
                 send_t = 1;
                 mem_bus_value_io_t = dqs;
+                $display("Captured read value %x", dqs);
             end
             dequeue_in = 1;
         end
