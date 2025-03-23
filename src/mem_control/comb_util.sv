@@ -353,9 +353,7 @@ module command_sender #(
             if (read_burst_ready) begin
                 read_bursting <= 1'b1;
             end else if (read_bursting) begin
-                /* verilator lint_off NULLPORT */
-                val_out[(burst_counter + read_col_start)][2:0] = mem_bus_value_io;
-                /* verilator lint_off NULLPORT */
+                val_out[{(burst_counter + read_col_start)}[2:0]] = mem_bus_value_io;
                 burst_counter <= burst_counter == 7 ? 0 : burst_counter + 1;
                 read_burst_ready = burst_counter != 7;
                 read_bursting <= burst_counter != 7;

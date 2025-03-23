@@ -19,7 +19,6 @@
 // go unused. This is because DRAM is pipelined, and the synchronization is done
 // via. known latency times, rather than through handshake protocols. Handshake
 // protocols do not work well with bi-directional wires anyways.
-`timescale 1ns/1ps
 
 module last_level_cache #(
     parameter int A = 8,
@@ -90,51 +89,39 @@ module last_level_cache #(
     logic _bus_addr_cmd_out;
     logic cl_in;
 
-    logic [W-1:0] extended_addr;
-    logic [W-1:0] extended_sdram_addr;
-    logic [W-1:0] extended_sdram_addr_in;
-    logic [W-1:0] extended_hc_addr_out;
-
     cache #(
         .A(A),
         .B(B),
         .C(C),
-        .W(W)
-    ) dut (
+        .W(W),
+        .ADDR_BITS(PADDR_BITS)
+    ) _cache (
       .rst_N_in(rst_N_in),
       .clk_in(clk_in),
       .cs_in(cs_in),
       .flush_in(flush_in),
       .hc_valid_in(hc_valid_in),
       .hc_ready_in(hc_ready_in),
-      .hc_addr_in(extended_addr),
+      .hc_addr_in(hc_addr_in),
       .hc_value_in(hc_value_in),
       .hc_we_in(hc_we_in),
-      .cl_in(cl_in),
+      .cache_line_in(hc_line_in),
+      .cl_in(hc_cl_in),
       .lc_valid_out(sdram_valid_out),
       .lc_ready_out(sdram_ready_out),
-      .lc_addr_out(extended_sdram_addr),
+      .lc_addr_out(sdram_addr_out),
       .lc_value_out(sdram_value_out),
       .we_out(sdram_we_out),
       .lc_valid_in(sdram_valid_in),
       .lc_ready_in(sdram_ready_in),
-      .lc_addr_in(extended_sdram_addr_in),
+      .lc_addr_in(sdram_addr_in),
       .lc_value_in(sdram_value_in),
       .hc_valid_out(hc_valid_out),
       .hc_ready_out(hc_ready_out),
       .hc_we_out(hc_we_out),
-      .hc_addr_out(extended_hc_addr_out),
-      .hc_value_out(hc_value_out),
-      .cache_line_in(_bus_val_out)
+      .hc_addr_out(hc_addr_out),
+      .hc_value_out(hc_value_out)
     );
-
-    // Zero-extend addresses
-    always_comb begin
-        extended_addr = {{(W-PADDR_BITS){1'b0}}, hc_addr_in};
-        extended_sdram_addr = {{(W-PADDR_BITS){1'b0}}, sdram_addr_out};
-        extended_sdram_addr_in = {{(W-PADDR_BITS){1'b0}}, sdram_addr_in};
-        hc_addr_out = extended_hc_addr_out[PADDR_BITS-1:0];  // Truncate back to PADDR_BITS
-    end
 
     typedef enum logic [3:0] {
         IDLE,

@@ -27,6 +27,10 @@ module request_scheduler #(
     output logic [2:0] cmd_out, // 0 is read, 1 is write, 2 is activate, 3 is precharge; if valid_out is 0 then block
     output logic valid_out
 );
+
+        localparam LOWER_ADDR_BITS_C = COL_BITS+$clog2(BANK_GROUPS)+$clog2(BANKS_PER_GROUP);
+        localparam LOWER_ADDR_BITS_R = ROW_BITS+$clog2(BANK_GROUPS)+$clog2(BANKS_PER_GROUP);
+
     typedef struct packed {
         logic [PADDR_BITS-1:0] addr;
         logic [$clog2(BANK_GROUPS)-1:0] bank_group;
@@ -117,7 +121,6 @@ module request_scheduler #(
     );
         done = 1'b0;
         valid_out_t = 1'b0;
-        
         for (int i = 0; i < BANKS; i++) begin
             if (!params_out[i].ready_empty_out && 
                 !bank_state_params_out.blocked[i[$clog2(BANKS)-1:0]] && 
@@ -132,28 +135,27 @@ module request_scheduler #(
                 cmd_out_t = cmds[p];
                 row_out_t = top.row;
                 col_out_t = top.col;
+                bank_out_t = top.bank;
+                bank_group_out_t = top.bank_group;
                 // Which command are we considering sending out to DRAM bank?
                 if (p == 1) begin // write command
                     val_out_t = top.val_in;//not bursting??
-                    addr_out_t = {1'b0, 1'b1, 1'b1, 1'b0, 1'b0, {(14-COL_BITS){1'b0}}, col_out_t};
+                    addr_out_t = {1'b0, 1'b1, 1'b1, 1'b0, 1'b0, bank_group_out_t, bank_out_t, {(14-LOWER_ADDR_BITS_C){1'b0}}, col_out_t};
                 end else if (p == 2) begin // activate command
-                    addr_out_t = {1'b0, 1'b0, {(17-ROW_BITS){1'b0}}, row_out_t};
+                    addr_out_t = {1'b0, 1'b0, 3'b0, bank_group_out_t, bank_out_t, {(14-LOWER_ADDR_BITS_R){1'b0}}, row_out_t};
                     bank_state_params_in.activate = bank_state_params_out.active_bank;
                     bank_state_params_in.activate[i] = 1'b1;
                     bank_state_params_in.row_address = top.row;
                     val_out_t = 'b0;
                 end else if (p == 3) begin
-                    addr_out_t = {1'b0, 1'b1, 1'b0, 1'b1, 1'b0, {(14-COL_BITS){1'b0}}, col_out_t};
+                    addr_out_t = {1'b0, 1'b1, 1'b0, 1'b1, 1'b0, bank_group_out_t, bank_out_t, {(14-LOWER_ADDR_BITS_C){1'b0}}, col_out_t};
                     bank_state_params_in.precharge = bank_state_params_out.ready_to_access;
                     bank_state_params_in.precharge[i] = 1'b1;
                     val_out_t = 'b0;
                 end else begin // read command
-                    addr_out_t = {1'b0, 1'b1, 1'b1, 1'b0, 1'b1, {(14-COL_BITS){1'b0}}, col_out_t};
+                    addr_out_t = {1'b0, 1'b1, 1'b1, 1'b0, 1'b1, bank_group_out_t, bank_out_t, {(14-LOWER_ADDR_BITS_C){1'b0}}, col_out_t};
                     val_out_t = 'b0;//
                 end
-                
-                bank_out_t = top.bank;
-                bank_group_out_t = top.bank_group;
                 
                 params_in[i].transfer_ready = 1'b1;
                 break;
