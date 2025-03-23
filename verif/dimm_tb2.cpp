@@ -79,7 +79,7 @@ void precharge (uint8_t bank_num) {
     dut->dqs = 0;
 }
 
-void write_command (bool pre, bitset<COL_BITS> col, uint8_t bank_num, uint64_t (&data_to_write)[8]) {
+void write_command (bool pre, uint8_t col, uint8_t bank_num, uint64_t (&data_to_write)[8]) {
 
     // Assigning bank group bits
     dut->bg_in |= (bank_num & 0b1);
@@ -100,7 +100,7 @@ void write_command (bool pre, bitset<COL_BITS> col, uint8_t bank_num, uint64_t (
     dut->addr_in &= ~(1 << 15);
     dut->addr_in &= ~(1 << 14);
 
-    // still need to do the actual data stuff here
+    // Writing out data 
     dut->dqs = data_to_write[0];
     dut->dqs = data_to_write[1];
     toggleClock(); // assuming that this toggled 1 cycle
@@ -124,7 +124,7 @@ void write_command (bool pre, bitset<COL_BITS> col, uint8_t bank_num, uint64_t (
     dut->dqs = 0;
 }
 
-void read_command (bool pre, bitset<COL_BITS> col, uint8_t bank_num) {
+void read_command (bool pre, uint8_t col, uint8_t bank_num) {
     // Assigning bank group bits
     dut->bg_in |= (bank_num & 0b1);
     dut->ba_in |= ((bank_num & 0b110) >> 1);
@@ -163,10 +163,15 @@ int main (int argc, char **argv) {
     dut->trace(m_trace, 5);
     m_trace->open("dump.vcd");
     
+    // init a random num generator
     random_device rd;
     mt19937 rng(rd());
 
-    uniform_int_distribution<int> distribution(1,4);
+    uniform_int_distribution<int> op_distr(1,4);
+    uniform_int_distribution<int> bank_distr(1,8);
+    uniform_int_distribution<int> row_distr(1,256);
+    uniform_int_distribution<int> col_distr(1,16);
+    uniform_int_distribution<int> data_distr(0,100000); // randomizing data
 
      sim_time = 0; // simulator time
 
@@ -178,21 +183,33 @@ int main (int argc, char **argv) {
     dut->eval();
     m_trace->dump(sim_time);
     while (sim_time < max_sim_time) {
-        //dut_reset(dut, sim_time);
-        toggleClock();
-        activate (0, 0, dut->clk_in);
-        toggleClock();
-
-        activate (1, 0, dut->clk_in);
-        toggleClock();
-
-	int random_op = distribution(rng);
+	int random_op = op_distr(rng);
+	int random_bank = bank_distr(rng);
+	int random_row = row_distr(rng);
 
 	if (random_op == 1) {
-	  //
+	  // activate command
+          cout << "Activating row " << random_row << " in bank " << random_bank << endl;
+	  activate (random_bank, random_row, dut->clk_in);
 	} else if (random_op == 2) {
+	  // precharge command
+          cout << "Precharging active row in bank " << random_bank << endl;
+	  precharge (random_bank);
 	} else if (random_op == 3) {
+	  // write command
+          random_col = col_distr(rng);
+	  //generate random data to write out
+	  uint64_t data_to_write[8];
+	  for (int i = 0; i < 8; i++) {
+	    data_to_write[i] = data_distr(rng);
+	    cout << "Writing " << data_to_write[i] << " to col " << random_col << " in bank " << random_bank << endl;
+	  } 
+	  write_command (1, random_col, random_bank, data_to_write);
 	} else if (random_op == 4) {
+	  // read command
+          random_col = col_distr(rng);
+	  cout << "Reading from col " << random_col << " in bank " << random_bank << endl;
+	  read_command (1, random_col, random_bank);
 	}
     }
     m_trace->close();
