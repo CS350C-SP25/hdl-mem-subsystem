@@ -1,3 +1,7 @@
 .vscode/
 obj_dir/
 *.vcd
+db/*
+db
+/db
+db/prev_cmp_mem_subsystem_tb.qmsg
