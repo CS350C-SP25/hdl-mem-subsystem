@@ -1,6 +1,4 @@
 `timescale 1ps / 1ps
-import types::*;
-
 /*
  The L1 Data cache is expected to be:
  - PIPT. However the addresses it accepts are virtual, so it must interface with
@@ -20,12 +18,15 @@ import types::*;
  A fun issue is that the LSU expects a virtual address to be returned to it, but
  this is a PIPT cache. Maybe the MSHRs can help?
  */
+
+// all this module needs to do is keep tracking mshr matching, that's all.
 module l1_data_cache #(
     parameter int A = 3,
     parameter int B = 64,
     parameter int C = 1536,
     parameter int PADDR_BITS = 22,
-    parameter int MSHR_COUNT = 4
+    parameter int MSHR_COUNT = 4,
+    parameter int TAG_BITS = 10
 ) (
     input logic clk_in,
     input logic rst_N_in,
@@ -59,178 +60,153 @@ module l1_data_cache #(
     logic [63:0] vaddr;
     logic we;
     logic [63:0] data;
+    logic [TAG_BITS-1:0] tag;
   } mshr_entry_t;
 
-  mshr_entry_t [MSHR_COUNT-1:0] mshr;
-  logic [MSHR_COUNT-1:0] mshr_valid;
-  logic [MSHR_COUNT-1:0] mshr_matched;
+  mshr_entry_t mshr_entries[MSHR_COUNT-1:0];
 
-  typedef struct packed {
-    logic [PADDR_SIZE-1:0] paddr;
-    logic [63:0] data;
-  } evict_buffer_t;
+  typedef enum logic [2:0] {
+    IDLE,
+    SEND_REQ_LC,
+    SEND_RESP_HC,
+    CHECK_MSHR,
+    BLOCK,
+    WAIT_MSHR
+  } states;
 
-  evict_buffer_t [MSHR_COUNT-1:0] evict_buffer;
-  logic [$clog2(MSHR_COUNT+1)-1:0] evict_count;
-  logic [$clog2(MSHR_COUNT)-1:0] evict_head, evict_tail;
+  states cur_state, next_state;
 
-  logic cache_hit, cache_we;
-  logic [63:0] cache_addr, cache_wdata, cache_rdata;
-  logic cache_valid_in, cache_ready_out;
+  reg flush_in_reg;
+  reg lsu_valid_in_reg;
+  reg lsu_ready_in_reg;
+  reg [63:0] lsu_addr_in_reg;
+  reg [63:0] lsu_value_in_reg;
+  reg lsu_we_in_reg;
+  reg lc_ready_in_reg;
+  reg lc_valid_in_reg;
+  reg [PADDR_BITS-1:0] lc_addr_in_reg;
+  reg [63:0] lc_value_in_reg;
 
-  cache #(
-      .A(A),
-      .B(B),
-      .C(C),
-      .W(64)
-  ) cache_inst (
-      .rst_N_in(rst_N_in),
-      .clk_in(clk_in),
-      .cs_in(~cs_N_in),
-      .flush_in(flush_in),
-      .hc_valid_in(cache_valid_in),
-      .hc_ready_in(lsu_ready_in),
-      .hc_addr_in(cache_addr),
-      .hc_value_in(cache_wdata),
-      .hc_we_in(cache_we),
-      .lc_valid_out(),
-      .lc_ready_out(),
-      .lc_addr_out(),
-      .lc_value_out(),
-      .we_out(),
-      .lc_valid_in(1'b0),
-      .lc_ready_in(1'b1),
-      .lc_addr_in(lc_addr_in),
-      .lc_value_in(lc_value_in),
-      .hc_valid_out(cache_hit),
-      .hc_ready_out(cache_ready_out),
-      .hc_we_out(),
-      .hc_addr_out(),
-      .hc_value_out(cache_rdata)
-  );
+  reg lsu_valid_out_reg;
+  reg lsu_ready_out_reg;
+  reg [63:0] lsu_addr_out_reg;
+  reg [63:0] lsu_value_out_reg;
+  reg lsu_write_complete_out_reg;
+  reg lc_valid_out_reg;
+  reg lc_ready_out_reg;
+  reg [PADDR_BITS-1:0] lc_addr_out_reg;
+  reg [63:0] lc_value_out_reg;
+  reg lc_we_out_reg;
 
-  always_ff @(posedge clk_in or negedge rst_N_in) begin
+  logic lsu_valid_out_comb;
+  logic lsu_ready_out_comb;
+  logic [63:0] lsu_addr_out_comb;
+  logic [63:0] lsu_value_out_comb;
+  logic lsu_write_complete_out_comb;
+  logic lc_valid_out_comb;
+  logic lc_ready_out_comb;
+  logic [PADDR_BITS-1:0] lc_addr_out_comb;
+  logic [63:0] lc_value_out_comb;
+  logic lc_we_out_comb;
+
+
+  always_comb begin : l1d_combinational_logic
+    lsu_valid_out_comb = 1'b0;
+    lsu_ready_out_comb = 1'b0;
+    lsu_addr_out_comb = '0;
+    lsu_value_out_comb = '0;
+    lsu_write_complete_out_comb = 1'b0;
+    lc_valid_out_comb = 1'b0;
+    lc_ready_out_comb = 1'b0;
+    lc_addr_out_comb = '0;
+    lc_value_out_comb = '0;
+    lc_we_out_comb = 1'b0;
+
+    case (cur_state)
+      IDLE: begin
+        if (lc_valid_in_reg) begin
+          lc_ready_out_comb = 1;
+        end else if (lsu_valid_in_reg) begin
+          lsu_ready_out_comb = 1;
+        end
+
+        if (lc_valid_in_reg || lsu_valid_in_reg) begin
+          next_state = CHECK_MSHR;
+        end
+      end
+
+      CHECK_MSHR: begin
+
+      end
+
+      default: begin
+
+      end
+    endcase
+  end
+
+  always @(posedge clk_in) begin
     if (!rst_N_in) begin
-      mshr_valid <= '0;
-      evict_count <= '0;
-      evict_head <= '0;
-      evict_tail <= '0;
-      lsu_valid_out <= '0;
-      lc_valid_out <= '0;
-      lc_we_out <= '0;
-    end else begin
-      lsu_valid_out <= '0;
-      lc_valid_out  <= '0;
+      flush_in_reg <= 1'b0;
+      lsu_valid_in_reg <= 1'b0;
+      lsu_ready_in_reg <= 1'b0;
+      lsu_addr_in_reg <= '0;
+      lsu_value_in_reg <= '0;
+      lsu_we_in_reg <= 1'b0;
+      lc_ready_in_reg <= 1'b0;
+      lc_valid_in_reg <= 1'b0;
+      lc_addr_in_reg <= '0;
+      lc_value_in_reg <= '0;
 
-      if (evict_count > 0 && lc_ready_in) begin
-        lc_valid_out <= 1'b1;
-        lc_we_out <= 1'b1;
-        lc_addr_out <= evict_buffer[evict_head].paddr;
-        lc_value_out <= evict_buffer[evict_head].data;
-        evict_head <= evict_head + 1;
-        evict_count <= evict_count - 1;
-      end
+      lsu_valid_out_reg <= 1'b0;
+      lsu_ready_out_reg <= 1'b0;
+      lsu_addr_out_reg <= '0;
+      lsu_value_out_reg <= '0;
+      lsu_write_complete_out_reg <= 1'b0;
+      lc_valid_out_reg <= 1'b0;
+      lc_ready_out_reg <= 1'b0;
+      lc_addr_out_reg <= '0;
+      lc_value_out_reg <= '0;
+      lc_we_out_reg <= 1'b0;
+    end else if (!cs_N_in) begin
+      if (cur_state == IDLE) begin
+        flush_in_reg <= flush_in;
+        lsu_valid_in_reg <= lsu_valid_in;
+        lsu_ready_in_reg <= lsu_ready_in;
+        lsu_addr_in_reg <= lsu_addr_in;
+        lsu_value_in_reg <= lsu_value_in;
+        lsu_we_in_reg <= lsu_we_in;
+        lc_ready_in_reg <= lc_ready_in;
+        lc_valid_in_reg <= lc_valid_in;
+        lc_addr_in_reg <= lc_addr_in;
+        lc_value_in_reg <= lc_value_in;
 
-      if (lc_valid_in && lc_ready_out) begin
-        for (int i = 0; i < MSHR_COUNT; i++) begin
-          if (mshr_valid[i] && mshr[i].paddr == lc_addr_in) begin
-            mshr_valid[i] <= 1'b0;
-            lsu_valid_out <= 1'b1;
-            lsu_value_out <= lc_value_in;
-            lsu_addr_out  <= mshr[i].vaddr;
-            if (mshr[i].we) begin
-              cache_valid_in <= 1'b1;
-              cache_we <= 1'b1;
-              cache_addr <= mshr[i].paddr;
-              cache_wdata <= mshr[i].data;
-            end
-          end
-        end
-      end
-
-      if (lsu_valid_in && lsu_ready_out) begin
-        cache_valid_in <= 1'b1;
-        cache_addr <= lsu_addr_in;
-        cache_we <= lsu_we_in;
-        cache_wdata <= lsu_value_in;
-        if (cache_hit) begin
-          lsu_valid_out <= 1'b1;
-          lsu_value_out <= cache_rdata;
-        end else begin
-          for (int i = 0; i < MSHR_COUNT; i++) begin
-            if (!mshr_valid[i]) begin
-              mshr_valid[i] <= 1'b1;
-              mshr[i].paddr <= lsu_addr_in;
-              mshr[i].vaddr <= lsu_addr_in;
-              mshr[i].we <= lsu_we_in;
-              mshr[i].data <= lsu_value_in;
-              lc_valid_out <= 1'b1;
-              lc_we_out <= 1'b0;
-              lc_addr_out <= lsu_addr_in;
-              break;
-            end
-          end
-        end
+        lsu_valid_out_reg <= lsu_valid_out;
+        lsu_ready_out_reg <= lsu_ready_out;
+        lsu_addr_out_reg <= lsu_addr_out;
+        lsu_value_out_reg <= lsu_value_out;
+        lsu_write_complete_out_reg <= lsu_write_complete_out;
+        lc_valid_out_reg <= lc_valid_out;
+        lc_ready_out_reg <= lc_ready_out;
+        lc_addr_out_reg <= lc_addr_out;
+        lc_value_out_reg <= lc_value_out;
+        lc_we_out_reg <= lc_we_out;
       end
     end
   end
 
-  assign lsu_ready_out = (lsu_valid_in && cache_hit) || (| ~mshr_valid);
-  assign lc_ready_out  = 1'b1;
+  assign lsu_valid_out = lsu_valid_out_reg;
+  assign lsu_ready_out = lsu_ready_out_reg;
+  assign lsu_addr_out = lsu_addr_out_reg;
+  assign lsu_value_out = lsu_value_out_reg;
+  assign lsu_write_complete_out = lsu_write_complete_out_reg;
+  assign lc_valid_out = lc_valid_out_reg;
+  assign lc_ready_out = lc_ready_out_reg;
+  assign lc_addr_out = lc_addr_out_reg;
+  assign lc_value_out = lc_value_out_reg;
+  assign lc_we_out = lc_we_out_reg;
+
+
+
 
 endmodule : l1_data_cache
-
-
-module mshr_queue #(
-    parameter QUEUE_SIZE = 16,
-    type mem_request_t = logic  // default placeholder
-) (
-    input logic clk_in,
-    input logic rst_in,
-    input logic enqueue_in,
-    input logic dequeue_in,
-    input mem_request_t req_in,
-    input logic [31:0] cycle_count,
-    output mem_request_t req_out,
-    output logic empty,
-    output logic full
-);
-  mem_request_t queue[QUEUE_SIZE-1:0];
-  mem_request_t next_queue[QUEUE_SIZE-1:0];
-  logic [$clog2(QUEUE_SIZE)-1:0] next_head;
-  logic [$clog2(QUEUE_SIZE):0] next_size;
-  logic [$clog2(QUEUE_SIZE)-1:0] head;
-  logic [$clog2(QUEUE_SIZE):0] size;
-  always_ff @(posedge clk_in or posedge rst_in) begin
-    if (rst_in) begin
-      head <= 0;
-      size <= 0;
-    end else begin
-      queue <= next_queue;
-      size  <= next_size;
-      head  <= next_head;
-    end
-    // $display("Size %d", size);
-  end
-
-  always_comb begin
-    next_queue = queue;
-    next_size  = size;
-    next_head  = head;
-
-    if (enqueue_in && !full) begin
-      next_queue[(head+size)%QUEUE_SIZE] = req_in;
-      next_size = size + 1;
-    end
-    if (dequeue_in && !empty) begin
-      next_size = size - 1;
-      next_head = (head + 4'b1) & {$clog2(QUEUE_SIZE) {1'b1}};  // % QUEUE_SIZE
-      // $display("dequeuing \n");
-    end
-  end
-  // Full & Empty Flags
-  assign req_out = queue[head];
-  assign full = (size == QUEUE_SIZE);
-  assign empty = (size == 0);
-endmodule : mem_req_queue
-

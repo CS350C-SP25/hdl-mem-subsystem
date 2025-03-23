@@ -26,6 +26,7 @@ SCHEDULER_VFLAGS = $(VFLAGS) --top-module mem_scheduler_tb
 LLC_VFLAGS = $(VFLAGS) --top-module last_level_cache
 SDRAM_VFLAGS = $(VFLAGS) --top-module ddr4_system_tb
 CACHE_VFLAGS = $(VFLAGS) --top-module cache
+L1D_VFLAGS = $(VFLAGS) --top-module l1_data_cache
 SD_CTRL_DIMM_VFLAGS = $(VFLAGS) --top-module llc_dimm_tb
 
 # Source files
@@ -42,7 +43,8 @@ DIMM_BIN = obj_dir/Vddr4_dimm
 SCHEDULER_BIN = obj_dir/Vmem_scheduler
 LLC_BIN = obj_dir/Vlast_level_cache
 SDRAM_BIN = obj_dir/Vddr4_system_tb
-CACHE_BIN = obj_dir/bin/Vcache
+CACHE_BIN = obj_dir/cache
+L1D_BIN = obj_dir/Vl1_data_cache
 SD_CTRL_DIMM_BIN = obj_dir/Vllc_dimm_tb
 
 # Default target (alias for dimm)
@@ -65,6 +67,9 @@ sdram: $(SDRAM_BIN)
 cache: $(CACHE_BIN)
 	./$(CACHE_BIN)
 
+l1d: ${L1D_BIN}
+	./${L1D_BIN}
+
 # Compile and run for System Controller and DIMM testbench
 sd_ctrl_dimm: $(SD_CTRL_DIMM_BIN)
 	./$(SD_CTRL_DIMM_BIN)
@@ -85,6 +90,9 @@ $(SDRAM_BIN):
 $(CACHE_BIN):
 	$(OBJCACHE) $(VERILATOR) $(CACHE_VFLAGS) $(CACHE_SRCS)
 
+${L1D_BIN}:
+	$(OBJCACHE) $(VERILATOR) $(L1D_VFLAGS) $(L1D_SRCS)
+
 $(SD_CTRL_DIMM_BIN):
 	$(OBJCACHE) $(VERILATOR) $(SD_CTRL_DIMM_VFLAGS) $(SD_CTRL_DIMM_SRCS)
 
@@ -102,9 +110,10 @@ clean-sdram:
 	rm -rf obj_dir/Vsdram_controller
 
 clean-cache:
-	rm -rf obj_dir/bin/Vcache
+	rm -rf obj_dir/Vcache
+	rm -rf obj_dir/Vl1_data_cache
 
 clean-sd-ctrl-dimm:
-	rm -rf obj_dir/bin/Vsd_ctrl_dimm_tb *.log *.dmp *.vcd
+	rm -rf obj_dir/Vsd_ctrl_dimm_tb *.log *.dmp *.vcd
 
 .PHONY: all clean run dimm scheduler sdram cache sd_ctrl_dimm clean-dimm clean-scheduler clean-sdram clean-cache clean-sd-ctrl-dimm
