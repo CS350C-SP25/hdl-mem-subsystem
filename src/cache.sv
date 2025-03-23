@@ -1,4 +1,3 @@
-`timescale 1ps / 1ps
 // A generic cache. It must consider:
 // - returning data on a hit (to higher-level cache)
 // - requesting data on a miss (to lower-level cache)
@@ -19,7 +18,8 @@ module cache #(
     parameter int A = 3,
     parameter int B = 64,
     parameter int C = 1536,
-    parameter int W = 64  // word size
+    parameter int W = 64,  // word size
+    parameter int ADDR_BITS = 64
 ) (
     // Generic Inputs
     input logic rst_N_in,
@@ -29,7 +29,7 @@ module cache #(
     // Inputs from higher-level cache
     input logic hc_valid_in,  // from LSU / prev level cache, basically that it wants a request done
     input logic hc_ready_in,  // from higher / dram level cache, basically that IT is ready to receive output from us
-    input logic [W-1:0] hc_addr_in,  // Input address to read/write
+    input logic [ADDR_BITS-1:0] hc_addr_in,  // Input address to read/write
     input logic [W-1:0] hc_value_in,  // Input data on write
     input logic hc_we_in,  // from proc or higher-cache, write enable
     input logic [B*8-1:0] cache_line_in,  // input of cache line -- if this is an eviction from higher cache
@@ -37,19 +37,19 @@ module cache #(
     // Outputs to lower-level cache (or mem con troller)
     output logic lc_valid_out,  // data is ready, basically that we need to receive data from low-level-cache
     output logic lc_ready_out,  // ready to receive input, basically that WE are ready to receive output from it
-    output logic [W-1:0] lc_addr_out,  // Input address to read/write
+    output logic [ADDR_BITS-1:0] lc_addr_out,  // Input address to read/write
     output logic [B*8-1:0] lc_value_out,  // addr or value out
     output logic we_out,  // Write to lower-level cache/dram
     // Inputs from lower-level cache or memory controller (returns data, may evict)
     input logic lc_valid_in,  // from lower-level cache / DRAM controller, basically that it wants to give us data
     input logic lc_ready_in,  // from lower-level cache / DRAM controller, basically that IT is ready to receive input
-    input logic [W-1:0] lc_addr_in,  // Input address to read/write
+    input logic [ADDR_BITS-1:0] lc_addr_in,  // Input address to read/write
     input logic [B*8-1:0] lc_value_in,  // Input address to read/write
     // Outputs to higher-level cache (returning a fetched value)
     output logic hc_valid_out,  // from LSU / higher-level cache
     output logic hc_ready_out,  // from LSU / higher-level cache
     output logic hc_we_out,  // from LSU / higher-level cache
-    output logic [W-1:0] hc_addr_out,  // Input address to read/write
+    output logic [ADDR_BITS-1:0] hc_addr_out,  // Input address to read/write
     output logic [W-1:0] hc_value_out  // Input address to read/write
 );
 
@@ -57,44 +57,44 @@ module cache #(
   localparam int NUM_SETS = NUM_BLOCKS / A;
   localparam int BLOCK_OFFSET_BITS = $clog2(B);
   localparam int SET_INDEX_BITS = $clog2(NUM_SETS);
-  localparam int TAG_BITS = W - SET_INDEX_BITS - BLOCK_OFFSET_BITS;
+  localparam int TAG_BITS = ADDR_BITS - SET_INDEX_BITS - BLOCK_OFFSET_BITS;
   localparam int LRU_BITS = A - 1;
 
   // Input registers
   logic flush_reg;
   logic hc_valid_reg;
   logic hc_ready_reg;
-  logic [W-1:0] hc_addr_reg;
+  logic [ADDR_BITS-1:0] hc_addr_reg;
   logic [63:0] hc_value_reg;
   logic hc_we_reg;
   logic lc_valid_reg;
   logic lc_ready_reg;
-  logic [W-1:0] lc_addr_reg;
+  logic [ADDR_BITS-1:0] lc_addr_reg;
   logic [B*8-1:0] lc_value_reg;
 
   // Output registers
   logic lc_valid_out_reg;
   logic lc_ready_out_reg;
-  logic [W-1:0] lc_addr_out_reg;
+  logic [ADDR_BITS-1:0] lc_addr_out_reg;
   logic [63:0] lc_value_out_reg;
   logic we_out_reg;
   logic hc_valid_out_reg;
   logic hc_ready_out_reg;
   logic hc_we_out_reg;
-  logic [W-1:0] hc_addr_out_reg;
+  logic [ADDR_BITS-1:0] hc_addr_out_reg;
   logic [63:0] hc_value_out_reg;
 
 
   // Temporary outputs from combinational logic
   logic lc_valid_out_comb;
   logic lc_ready_out_comb;
-  logic [W-1:0] lc_addr_out_comb;
+  logic [ADDR_BITS-1:0] lc_addr_out_comb;
   logic [63:0] lc_value_out_comb;
   logic we_out_comb;
   logic hc_valid_out_comb;
   logic hc_ready_out_comb;
   logic hc_we_out_comb;
-  logic [W-1:0] hc_addr_out_comb;
+  logic [ADDR_BITS-1:0] hc_addr_out_comb;
   logic [63:0] hc_value_out_comb;
 
 

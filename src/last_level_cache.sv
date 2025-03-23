@@ -32,8 +32,8 @@ module last_level_cache #(
     parameter int ROW_BITS = 8,  // log2(ROWS)
     parameter int COL_BITS = 4,  // log2(COLS)
     parameter int BUS_WIDTH = 16,  // bus width per chip
-    parameter int BANK_GROUPS = 8,
-    parameter int BANKS_PER_GROUP = 8
+    parameter int BANK_GROUPS = 4,
+    parameter int BANKS_PER_GROUP = 2
 ) (
     // Generic
     input logic clk_in,
@@ -46,6 +46,8 @@ module last_level_cache #(
     input logic [PADDR_BITS-1:0] hc_addr_in,  // This address being returned may cause an eviction!
     input logic [W-1:0] hc_value_in,  // The write to the lower-level cache
     input logic hc_we_in,  // Higher-level cache is requesting a read/write
+    input logic [B*8-1:0] hc_line_in,
+    input logic hc_cl_in,
     // Outputs to Higher-Level Caches (remember lower is slower with caches)
     output logic hc_ready_out,  // lower cache is ready (lower is slower)
     output logic hc_valid_out,  // lower cache is sending data to this module
@@ -57,14 +59,14 @@ module last_level_cache #(
     // InOut on Memory Bus (SDRAM controller)
     inout logic [W-1:0] mem_bus_value_io,  // Load / Store value for memory module
     // Outputs to Memory Bus (SDRAM controller)
-    output logic [PADDR_BITS:0] mem_bus_addr_out,  // Load addr for memory module, top bit is used for act_n
+    output logic [PADDR_BITS-1:0] mem_bus_addr_out,  // Load addr for memory module, top bit is used for act_n
     output logic mem_bus_ready_out,  // Should ALWAYS be ready to receive data from SDRAM controller
     output logic mem_bus_valid_out
 );
     logic sdram_valid_out;
     logic sdram_ready_out;
     logic [PADDR_BITS-1:0] sdram_addr_out;
-    logic [W-1:0] sdram_value_out;
+    logic [8*B-1:0] sdram_value_out;
     logic sdram_we_out;
 
     logic sdram_valid_in;
@@ -89,9 +91,9 @@ module last_level_cache #(
         .A(A),
         .B(B),
         .C(C),
-        .W(W), 
-        .ADDRESS_SIZE(PADDR_BITS) // not currently implemented in cache but should be 
-    ) dut (
+        .W(W),
+        .ADDR_BITS(PADDR_BITS)
+    ) _cache (
       .rst_N_in(rst_N_in),
       .clk_in(clk_in),
       .cs_in(cs_in),
@@ -101,6 +103,8 @@ module last_level_cache #(
       .hc_addr_in(hc_addr_in),
       .hc_value_in(hc_value_in),
       .hc_we_in(hc_we_in),
+      .cache_line_in(hc_line_in),
+      .cl_in(hc_cl_in),
       .lc_valid_out(sdram_valid_out),
       .lc_ready_out(sdram_ready_out),
       .lc_addr_out(sdram_addr_out),
@@ -167,10 +171,13 @@ module last_level_cache #(
 
     command_sender #(
         .CAS_LATENCY(CAS_LATENCY),
+        .ACTIVATION_LATENCY(ACTIVATION_LATENCY),
+        .PRECHARGE_LATENCY(PRECHARGE_LATENCY),
         .BANK_GROUPS(BANK_GROUPS),
         .BANKS_PER_GROUP(BANKS_PER_GROUP),       // banks per group
         .ROW_BITS(ROW_BITS),    // bits to address rows
-        COL_BITS(COL_BITS)     // bits to address columns
+        .COL_BITS(COL_BITS),     // bits to address columns
+        .PADDR_BITS(PADDR_BITS)
     ) cmd_sender (
         .clk_in(clk_in),
         .rst_N_in(rst_N_in), //TODO HERE YOU GO HERE TOO CLINT
@@ -182,7 +189,7 @@ module last_level_cache #(
         .val_in(_bus_val_out), // val to write if write
         .cmd_in(_bus_cmd_out),
 
-        .act_out(lc_valid_in), // Command bit (read is resolving)
+        .act_out(sdram_valid_in), // Command bit (read is resolving)
         .val_out(sdram_value_in),
         .paddr_out(sdram_addr_in),
         .bursting(bursting_block), // set to HI when the dimm should not recieve any commands that will interfere with a burst

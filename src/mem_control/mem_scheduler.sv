@@ -112,7 +112,8 @@ module request_scheduler #(
         output logic [COL_BITS-1:0] col_out_t,
         output logic [511:0] val_out_t,
         output logic [$clog2(BANKS_PER_GROUP)-1:0] bank_out_t,
-        output logic [$clog2(BANK_GROUPS)-1:0] bank_group_out_t
+        output logic [$clog2(BANK_GROUPS)-1:0] bank_group_out_t, 
+        output logic [PADDR_BITS-1:0] addr_out_t
     );
         done = 1'b0;
         valid_out_t = 1'b0;
@@ -134,16 +135,20 @@ module request_scheduler #(
                 // Which command are we considering sending out to DRAM bank?
                 if (p == 1) begin // write command
                     val_out_t = top.val_in;//not bursting??
+                    addr_out_t = {1'b0, 1'b1, 1'b1, 1'b0, 1'b0, {(14-COL_BITS){1'b0}}, col_out_t};
                 end else if (p == 2) begin // activate command
+                    addr_out_t = {1'b0, 1'b0, {(17-ROW_BITS){1'b0}}, row_out_t};
                     bank_state_params_in.activate = bank_state_params_out.active_bank;
                     bank_state_params_in.activate[i] = 1'b1;
                     bank_state_params_in.row_address = top.row;
                     val_out_t = 'b0;
                 end else if (p == 3) begin
+                    addr_out_t = {1'b0, 1'b1, 1'b0, 1'b1, 1'b0, {(14-COL_BITS){1'b0}}, col_out_t};
                     bank_state_params_in.precharge = bank_state_params_out.ready_to_access;
                     bank_state_params_in.precharge[i] = 1'b1;
                     val_out_t = 'b0;
                 end else begin // read command
+                    addr_out_t = {1'b0, 1'b1, 1'b1, 1'b0, 1'b1, {(14-COL_BITS){1'b0}}, col_out_t};
                     val_out_t = 'b0;//
                 end
                 
@@ -361,6 +366,7 @@ module request_scheduler #(
         bank_state_params_in.activate = '{default:0};
         bank_state_params_in.precharge =  '{default:0};
         bank_state = bank_state_params_out;
+        addr_out_t = {PADDR_BITS{1'b1}};
         init_mem_req(
             incoming_req,
             mem_bus_addr_in,
@@ -426,7 +432,8 @@ module request_scheduler #(
                         col_out_t,
                         val_out_t,
                         bank_out_t,
-                        bank_group_out_t
+                        bank_group_out_t,
+                        addr_out_t
                     );
                     last_read_t = cycle_counter;
                 end
@@ -445,7 +452,8 @@ module request_scheduler #(
                     col_out_t,
                     val_out_t,
                     bank_out_t,
-                    bank_group_out_t
+                    bank_group_out_t,
+                    addr_out_t
                 );
                 last_write_t = done ? cycle_counter : last_write;
                 if (!done) begin
@@ -463,7 +471,8 @@ module request_scheduler #(
                         col_out_t,
                         val_out_t,
                         bank_out_t,
-                        bank_group_out_t
+                        bank_group_out_t,
+                        addr_out_t
                     );
                 end
                 if (!done) begin
@@ -481,7 +490,8 @@ module request_scheduler #(
                         col_out_t,
                         val_out_t,
                         bank_out_t,
-                        bank_group_out_t
+                        bank_group_out_t,
+                        addr_out_t
                     );
                 end
             end

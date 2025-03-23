@@ -33,7 +33,7 @@ endmodule
 module dimm_to_paddr #(
     parameter int ROW_BITS = 8,
     parameter int COL_BITS = 4,
-    parameter int PADDR_BITS = 64, // word size
+    parameter int PADDR_BITS = 19, // word size
     parameter int BANK_GROUPS = 4,
     parameter int BANKS_PER_GROUP = 2
 ) (
@@ -48,7 +48,7 @@ module dimm_to_paddr #(
     localparam LOWER_BITS = COL_BITS+BANK_BITS+BANK_GRP_BITS;
 
     always_comb begin
-        mem_bus_addr_out = 64'({
+        mem_bus_addr_out = PADDR_BITS'({
             row_in, 
             bg_in[BANK_GRP_BITS-1:0], 
             ba_in[BANK_BITS-1:0], 
@@ -305,15 +305,15 @@ module command_sender #(
 
     always_ff @(posedge clk_in or negedge rst_N_in) begin
         if (!rst_N_in) begin
-            cycle_counter = 0;
+            cycle_counter <= 0;
         end else begin
             if (cmd_in == READ) begin
-                req_in.paddr = read_paddr;
-                req_in.cycle_counter = cycle_counter;
-                req_in.col = col_in;
-                enqueue_in = 1'b1;
+                req_in.paddr <= read_paddr;
+                req_in.cycle_counter <= cycle_counter;
+                req_in.col <= col_in;
+                enqueue_in <= 1'b1;
             end else begin
-                enqueue_in = 1'b0;
+                enqueue_in <= 1'b0;
             end
 
             if ((!empty && req_out.cycle_counter + CAS_LATENCY - 5 >= cycle_counter && req_out.cycle_counter + CAS_LATENCY <= cycle_counter) 
@@ -336,7 +336,7 @@ module command_sender #(
             if (!empty && req_out.cycle_counter + CAS_LATENCY + 3 == cycle_counter) begin
                 act_out <= 1'b1;
             end else begin
-                act_out = 1'b0;
+                act_out <= 1'b0;
             end
             cycle_counter <= cycle_counter + 1;
         end
@@ -349,14 +349,11 @@ module command_sender #(
     always_ff @(negedge rst_N_in or posedge clk_in or negedge clk_in)
         if (!rst_N_in) begin
             burst_counter <= '0;
-            enqueue_in <= 0;
-            dequeue_in <= 0;
-
         end else begin
             if (read_burst_ready) begin
                 read_bursting <= 1'b1;
             end else if (read_bursting) begin
-                val_out[(burst_counter + read_col_start)[2:0]] = mem_bus_value_io;
+                val_out[{(burst_counter + read_col_start)}[2:0]] = mem_bus_value_io;
                 burst_counter <= burst_counter == 7 ? 0 : burst_counter + 1;
                 read_burst_ready = burst_counter != 7;
                 read_bursting <= burst_counter != 7;
@@ -364,7 +361,7 @@ module command_sender #(
                 burst_counter <= burst_counter == 7 ? 0 : burst_counter + 1;
                 write_bursting <= burst_counter != 7;
             end else begin
-                burst_counter = 'b0;
+                burst_counter <= 'b0;
             end
         end
         assign mem_bus_value_io = ((cmd_in == WRITE && valid_in) || write_bursting) ? val_in[burst_counter] : {(64){1'bz}};
