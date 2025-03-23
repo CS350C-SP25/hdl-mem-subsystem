@@ -66,7 +66,7 @@ module last_level_cache #(
     logic sdram_valid_out;
     logic sdram_ready_out;
     logic [PADDR_BITS-1:0] sdram_addr_out;
-    logic [W-1:0] sdram_value_out;
+    logic [8*B-1:0] sdram_value_out;
     logic sdram_we_out;
 
     logic sdram_valid_in;
@@ -86,6 +86,12 @@ module last_level_cache #(
     logic _bus_valid_out;
     logic _bus_act_out;
     logic _bus_addr_cmd_out;
+    logic cl_in;
+
+    logic [W-1:0] extended_addr;
+    logic [W-1:0] extended_sdram_addr;
+    logic [W-1:0] extended_sdram_addr_in;
+    logic [W-1:0] extended_hc_addr_out;
 
     cache #(
         .A(A),
@@ -99,25 +105,34 @@ module last_level_cache #(
       .flush_in(flush_in),
       .hc_valid_in(hc_valid_in),
       .hc_ready_in(hc_ready_in),
-      .hc_addr_in(hc_addr_in),
+      .hc_addr_in(extended_addr),
       .hc_value_in(hc_value_in),
       .hc_we_in(hc_we_in),
+      .cl_in(cl_in),
       .lc_valid_out(sdram_valid_out),
       .lc_ready_out(sdram_ready_out),
-      .lc_addr_out(sdram_addr_out),
+      .lc_addr_out(extended_sdram_addr),
       .lc_value_out(sdram_value_out),
       .we_out(sdram_we_out),
       .lc_valid_in(sdram_valid_in),
       .lc_ready_in(sdram_ready_in),
-      .lc_addr_in(sdram_addr_in),
+      .lc_addr_in(extended_sdram_addr_in),
       .lc_value_in(sdram_value_in),
       .hc_valid_out(hc_valid_out),
       .hc_ready_out(hc_ready_out),
       .hc_we_out(hc_we_out),
-      .hc_addr_out(hc_addr_out),
+      .hc_addr_out(extended_hc_addr_out),
       .hc_value_out(hc_value_out),
       .cache_line_in(_bus_val_out)
     );
+
+    // Zero-extend addresses
+    always_comb begin
+        extended_addr = {{(W-PADDR_BITS){1'b0}}, hc_addr_in};
+        extended_sdram_addr = {{(W-PADDR_BITS){1'b0}}, sdram_addr_out};
+        extended_sdram_addr_in = {{(W-PADDR_BITS){1'b0}}, sdram_addr_in};
+        hc_addr_out = extended_hc_addr_out[PADDR_BITS-1:0];  // Truncate back to PADDR_BITS
+    end
 
     typedef enum logic [3:0] {
         IDLE,
