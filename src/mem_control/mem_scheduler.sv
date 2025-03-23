@@ -339,6 +339,9 @@ module request_scheduler #(
             valid_out <= valid_out_t;
             last_read <= last_read_t;
             last_write <= last_write_t;
+            if (valid_out) begin
+                $display("[SCHEDULER] Scheduling cmd %b at addr %x", cmd_out_t, addr_out_t);
+            end
             // $display("Read Queue Ready Top %b", read_params_out[17].ready_top_out.row);
             // $display("Activation Queue Pending Top %b", activation_params_out[17].pending_top_out.row);
             // $display("Activation Queue Ready Top %b", activation_params_out[17].pending_top_out.row);

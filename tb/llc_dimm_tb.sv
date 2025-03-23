@@ -37,6 +37,7 @@ module llc_dimm_tb (
     logic [18:0] mem_bus_addr_out;
     logic mem_bus_ready_out;
     logic mem_bus_valid_out;
+    logic cs = 1'b1;
     
     // Test control
     bit test_done;
@@ -109,6 +110,12 @@ module llc_dimm_tb (
         bg = mem_bus_addr_out[13:12];
         ba = {1'b0, mem_bus_addr_out[11]};
         dqm = '0;
+    end
+
+    always_ff @(posedge clk) begin
+        if (hc_ready_out) begin
+            $display("HC_READY_OUT %b", hc_ready_out);
+        end
     end
     
     initial begin

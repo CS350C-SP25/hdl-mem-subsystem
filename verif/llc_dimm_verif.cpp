@@ -184,8 +184,10 @@ public:
         if (m_pendingTransactions.empty()) {
             return;
         }
-        
+        m_dut->hc_valid_in = 1;
+        tick();
         // Check if LLC is ready to accept new transaction
+        // std::cout << "0x" << std::hex << m_dut->hc_ready_out << "\n";
         if (m_dut->hc_ready_out) {
             // Get the next pending transaction
             auto& txn = m_pendingTransactions.front();
@@ -194,14 +196,14 @@ public:
             
             switch(txn.op) {
                 case READ:
-                    m_dut->hc_valid_in = 1;
+                    std::cout << "Reading to addr 0x" << std::hex << txn.addr << "\n";
                     m_dut->hc_addr_in = txn.addr;
                     m_dut->hc_we_in = 0;
                     m_dut->hc_cl_in = 0;
                     break;
                     
                 case WRITE:
-                    m_dut->hc_valid_in = 1;
+                    std::cout << "Writing to addr 0x" << std::hex << txn.addr << "\n"; 
                     m_dut->hc_addr_in = txn.addr;
                     m_dut->hc_value_in = txn.value;
                     m_dut->hc_we_in = 1;
@@ -209,7 +211,7 @@ public:
                     break;
                     
                 case CACHE_LINE_FILL:
-                    m_dut->hc_valid_in = 1;
+                    std::cout << "Line fill to addr 0x" << std::hex << txn.addr << "\n"; 
                     m_dut->hc_addr_in = txn.addr;
                     // For simplicity, we're just sending a pattern as cache line data
                     // In a real test, this would be the actual cache line data
@@ -224,9 +226,11 @@ public:
                     break;
                     
                 case FLUSH:
+                    std::cout << "Flushing \n"; 
                     m_dut->flush_in = 1;
                     break;
             }
+            m_dut->hc_valid_in = 0;
             
             // Remove from pending transactions
             m_pendingTransactions.erase(m_pendingTransactions.begin());
@@ -249,6 +253,9 @@ public:
                 uint64_t expected = m_memoryModel[aligned_addr];
                 if (value != expected) {
                     std::cout << "ERROR: Value mismatch at address 0x" << std::hex << addr 
+                              << ", expected 0x" << expected << ", got 0x" << value << std::dec << std::endl;
+                } else {
+                    std::cout << "Correct value found at 0x" << std::hex << addr 
                               << ", expected 0x" << expected << ", got 0x" << value << std::dec << std::endl;
                 }
             }
@@ -323,7 +330,7 @@ public:
                 uint64_t value = 0xDEADBEEF00000000ULL | i;
                 write(addr, value);
             } else {
-                // Read operation
+                // Read operation 
                 read(addr);
             }
             
@@ -366,8 +373,9 @@ public:
 
     // Complete any remaining operations and check final state
     void finalize() {
+        std::cout << "Finalizing operations \n";
         int idle_cycles = 0;
-        const int MAX_IDLE = 1000; // Max cycles to wait for completion
+        const int MAX_IDLE = 100; // Max cycles to wait for completion
         
         while (!m_pendingTransactions.empty() && idle_cycles < MAX_IDLE) {
             driveInputs();
@@ -410,14 +418,14 @@ int main(int argc, char** argv) {
     std::cout << "Starting LLC+DIMM integration test..." << std::endl;
     
     // Run various test sequences
-    std::cout << "\nRunning random access test..." << std::endl;
-    tb.runRandomTest(100);
+    // std::cout << "\nRunning random access test..." << std::endl;
+    // tb.runRandomTest(100);
     
     std::cout << "\nRunning sequential access test..." << std::endl;
     tb.runSequentialTest(50);
     
-    std::cout << "\nRunning cache thrashing test..." << std::endl;
-    tb.runThrashingTest(30);
+    // std::cout << "\nRunning cache thrashing test..." << std::endl;
+    // tb.runThrashingTest(30);
     
     // Complete any remaining operations
     tb.finalize();

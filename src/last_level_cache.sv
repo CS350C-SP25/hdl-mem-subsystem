@@ -76,6 +76,8 @@ module last_level_cache #(
     logic [8*B-1:0] sdram_value_in;
     logic hc_we_out;
 
+    assign sdram_ready_in = 1'b1;
+
     // preliminary logics for scheduling onto the bus
     logic [PADDR_BITS-1:0] _bus_addr_out;
     logic [$clog2(BANK_GROUPS)-1:0] _bus_bank_group_out;
@@ -152,7 +154,7 @@ module last_level_cache #(
         .BANKS(BANK_GROUPS * BANKS_PER_GROUP)
     ) _request_scheduler (
         .clk_in(clk_in),
-        .rst_in(rst_N_in), //TODO CLINT WHICH IS IT?? rst or NOT rst
+        .rst_in(~rst_N_in), //TODO CLINT WHICH IS IT?? rst or NOT rst
         .mem_bus_addr_in(sdram_addr_out),
         .valid_in(sdram_valid_out), 
         .write_in(sdram_we_out), 
@@ -201,7 +203,7 @@ module last_level_cache #(
     // Set default values
     always_ff @(posedge clk_in or posedge rst_N_in) begin
         if (~rst_N_in) begin
-            mem_bus_ready <= '0;
+            mem_bus_ready <= '1;
             mem_bus_valid_out <= '0;
         end else begin
             mem_bus_valid_out <= _bus_valid_out;

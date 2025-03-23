@@ -290,7 +290,7 @@ module cache #(
             next_state = RESPOND_HC;
           end
         end else begin
-          $display("[%0t] we missed 🥀", $time);
+          $display("[%0t] we missed 🥀 at %x", $time, hc_addr_in);
           changed_way = get_victim_way(plru_state[cur_set]);
           next_state  = SEND_LOWER_CACHE_REQ;
         end
