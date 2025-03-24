@@ -142,7 +142,7 @@ module request_scheduler #(
                     addr_out_t = {1'b0, 1'b1, 1'b1, 1'b0, 1'b0, bank_group_out_t, bank_out_t, {(14-LOWER_ADDR_BITS_C){1'b0}}, col_out_t};
                 end else if (p == 2) begin // activate command
                     addr_out_t = {1'b0, 1'b0, 3'b0, bank_group_out_t, bank_out_t, {(14-LOWER_ADDR_BITS_R){1'b0}}, row_out_t};
-                    bank_state_params_in.activate = bank_state_params_out.active_bank;
+                    bank_state_params_in.activate = '0;
                     bank_state_params_in.activate[i] = 1'b1;
                     bank_state_params_in.row_address = top.row;
                     val_out_t = 'b0;
