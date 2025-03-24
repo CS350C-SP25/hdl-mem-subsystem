@@ -154,7 +154,7 @@ module last_level_cache #(
         .BANKS(BANK_GROUPS * BANKS_PER_GROUP)
     ) _request_scheduler (
         .clk_in(clk_in),
-        .rst_in(~rst_N_in), //TODO CLINT WHICH IS IT?? rst or NOT rst
+        .rst_in(~rst_N_in), 
         .mem_bus_addr_in(sdram_addr_out),
         .valid_in(sdram_valid_out), 
         .write_in(sdram_we_out), 
@@ -184,7 +184,7 @@ module last_level_cache #(
         .PADDR_BITS(PADDR_BITS)
     ) cmd_sender (
         .clk_in(clk_in),
-        .rst_N_in(rst_N_in), //TODO HERE YOU GO HERE TOO CLINT
+        .rst_N_in(rst_N_in), 
         .bank_group_in(_bus_bank_group_out),
         .bank_in(_bus_bank_out),
         .row_in(_bus_row_out),

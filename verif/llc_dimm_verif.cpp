@@ -326,8 +326,8 @@ class TestBench {
 
     // Run a sequential access pattern test
     void runSequentialTest(int num_operations) {
-        uint32_t start_addr = 0x24440;  // Align to cache line
-
+        uint32_t start_addr = 0x24440; // Align to cache line
+        
         for (int i = 0; i < num_operations; i++) {
             uint32_t addr = start_addr + (i * 8) % (1 << 19);
 
