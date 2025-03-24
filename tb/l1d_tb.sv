@@ -66,7 +66,8 @@ module l1_data_cache_tb;
       .lc_ready_out(lc_ready_out),
       .lc_addr_out(lc_addr_out),
       .lc_value_out(lc_value_out),
-      .lc_we_out(lc_we_out)
+      .lc_we_out(lc_we_out),
+      .lsu_tag_in(0)
   );
 
   // Clock generation

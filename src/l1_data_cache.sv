@@ -35,6 +35,7 @@ module l1_data_cache #(
     input logic lsu_ready_in,
     input logic [63:0] lsu_addr_in,
     input logic [63:0] lsu_value_in,
+    input logic [TAG_BITS-1:0] lsu_tag_in,
     input logic lsu_we_in,
     output logic lsu_valid_out,
     output logic lsu_ready_out,
@@ -91,6 +92,7 @@ module l1_data_cache #(
   reg lsu_ready_in_reg;
   reg [63:0] lsu_addr_in_reg;
   reg [63:0] lsu_value_in_reg;
+  reg [TAG_BITS-1:0] lsu_tag_in_reg;
   reg lsu_we_in_reg;
   reg lc_ready_in_reg;
   reg lc_valid_in_reg;
@@ -121,7 +123,7 @@ module l1_data_cache #(
 
   logic [PADDR_BITS-1:0] cur_addr;
 
-  assign cur_addr = lc_valid_in_reg ? lc_addr_in_reg : lsu_addr_in_reg[PADDR_BITS-1:0];
+  assign cur_addr = lsu_addr_in_reg[PADDR_BITS-1:0];
 
   /* MSHR Combinational Variables */
   logic found;
@@ -146,7 +148,7 @@ module l1_data_cache #(
     cache_flush_next = 0;
     cache_hc_valid_next = 0;
     cache_hc_ready_next = 0;
-    cache_hc_addr_next = lsu_addr_in_reg[PADDR_BITS-1:0];
+    cache_hc_addr_next = cur_addr;
     cache_hc_value_next = lsu_value_in_reg;
     cache_hc_we_next = lsu_we_in_reg;
     cache_cl_next = 0;
@@ -199,11 +201,14 @@ module l1_data_cache #(
       WAIT_CACHE: begin
         if (cache_lc_valid_out_reg) begin
           // Requesting data from lower cache -- this is a MISS, GOTO MISS STATUS HANDLE REGISTERS
+          cache_lc_ready_in_next = 1;  // complete transcation
           next_state = CHECK_MSHR;
         end else if (cache_hc_valid_out_reg) begin
           // HIT! We can move to sending data back to the top
-          lsu_value_out_comb = cache_hc_value_out_reg;
-          // next_state = SEND_RESP_HC;
+          cache_hc_ready_next = 1;  // complete transcation
+          lsu_value_out_comb  = cache_hc_value_out_reg;
+          $display("cache hit...?");
+          next_state = SEND_RESP_HC;
         end
       end
 
@@ -213,22 +218,51 @@ module l1_data_cache #(
           if (mshr_outputs[i].paddr == cur_addr) begin
             found = 1;
             pos   = i;
-            if (!mshr_outputs[i].valid) begin // checks the top of the queue of any mshr, if ts not valid, mshr is free
-              isFree  = 1;
-              freePos = i;
-            end
+          end
+
+          if (!mshr_outputs[i].valid) begin // checks the top of the queue of any mshr, if ts not valid, mshr is free
+            isFree  = 1;
+            freePos = i;
           end
         end
 
-        // add to the MSHR
-        if (isFree) begin
-          // there is a free MSHR, we will update the queue
-          mshr_entries[freePos].valid = 1;
-          mshr_entries[freePos].paddr = cur_addr;
-          mshr_entries[freePos].we = lsu_we_in_reg;
-          mshr_entries[freePos].data = lsu_value_in_reg;
-          mshr_enqueue[freePos] = 1;
-          // mshr_entries[freePos].tag = ;
+
+        // only add if there is no MSHR with the current block address
+        if (!found) begin
+          // PRIMARY MISS -- let's make a new miss queue
+          // add to the MSHR
+          if (isFree) begin
+            // there is a free MSHR, we will update the queue
+            mshr_entries[freePos].valid = 1;
+            mshr_entries[freePos].paddr = cur_addr;
+            mshr_entries[freePos].we = lsu_we_in_reg;
+            mshr_entries[freePos].data = lsu_value_in_reg;
+            mshr_entries[freePos].tag = lsu_tag_in_reg;
+
+            mshr_enqueue[freePos] = 1;
+          end
+        end else begin
+          // SECONDARY MISS -- let's add to the miss queue
+          if (!mshr_full[pos]) begin
+            if (lsu_we_in_reg) begin
+              // if this is a write, we will add it to the end of the queue
+              // queue is not full, we can add
+              mshr_entries[pos].valid = 1;
+              mshr_entries[pos].paddr = cur_addr;
+              mshr_entries[pos].we = lsu_we_in_reg;
+              mshr_entries[pos].data = lsu_value_in_reg;
+              mshr_entries[pos].tag = lsu_tag_in_reg;
+
+              mshr_enqueue[pos] = 1;
+            end else begin
+              // if this is a read, we check if the data being requested is write in MSHR, if it is, we can just fwd
+              // if it isn't, then we need to add to the queue as well
+            end
+
+          end else begin
+            // queue is full, cannot add, block request
+            // TODO: FIGURE OUT BLOCKING HERE
+          end
         end
       end
 
@@ -245,6 +279,7 @@ module l1_data_cache #(
       lsu_ready_in_reg <= 1'b0;
       lsu_addr_in_reg <= '0;
       lsu_value_in_reg <= '0;
+      lsu_tag_in_reg <= '0;
       lsu_we_in_reg <= 1'b0;
       lc_ready_in_reg <= 1'b0;
       lc_valid_in_reg <= 1'b0;
@@ -268,6 +303,7 @@ module l1_data_cache #(
         lsu_ready_in_reg <= lsu_ready_in;
         lsu_addr_in_reg <= lsu_addr_in;
         lsu_value_in_reg <= lsu_value_in;
+        lsu_tag_in_reg <= lsu_tag_in;
         lsu_we_in_reg <= lsu_we_in;
         lc_ready_in_reg <= lc_ready_in;
         lc_valid_in_reg <= lc_valid_in;
