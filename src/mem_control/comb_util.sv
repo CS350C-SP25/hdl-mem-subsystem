@@ -125,7 +125,7 @@ module mshr_queue #(
     output mem_request_t req_out,
     output logic empty,
     output logic full,
-    output mem_request_t  queue_read_only[QUEUE_SIZE-1:0]
+    output mem_request_t queue_read_only[QUEUE_SIZE-1:0]
 );
     mem_request_t queue[QUEUE_SIZE-1:0];
     mem_request_t next_queue[QUEUE_SIZE-1:0];

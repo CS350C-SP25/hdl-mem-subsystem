@@ -221,7 +221,6 @@ module lsu_queue #(
     int s = int'(head_ptr);  // Explicit cast to int (sign-extends if necessary)
     int iter_count = 0;  // Prevent infinite looping
 
-    $display("in forward_from_older_store");
 
     // Loop through the queue in order from head to load_idx
     while (s != load_idx && iter_count < QUEUE_DEPTH) begin
@@ -322,8 +321,8 @@ module lsu_queue #(
         // Must be younger in ring buffer
         if (is_younger(l, store_idx)) begin
           if (queue[l].ea_resolved && (queue[l].addr == store_addr) && !queue[l].dispatched) begin
-            $display("Forward: younger load(tag=%h) idx=%0d from store(tag=%h) => data=0x%h",
-                     queue[l].tag, l, store_tag, store_data);
+            $display("Forward: younger load(tag=%h) idx=%0d from store(tag=%h) => data=0x%h, at index %d",
+                     queue[l].tag, l, store_tag, store_data, store_idx); // this is WRONG. how is it saying it is younger??
 
             // Mark the load done
             queue[l].value <= store_data;
@@ -504,13 +503,15 @@ module lsu_queue #(
   function automatic logic is_younger(input int i, input int j);
     int idx;
     if (i == j) return 0;
-    idx = i;
-    for (int step = 0; step < QUEUE_DEPTH; step++) begin
-      idx = (idx + 1) % QUEUE_DEPTH;
-      if (idx == j) return 1;
-    end
+    idx = j;
+      for (int step = 0; step < QUEUE_DEPTH; step++) begin
+        idx = (idx + 1) % QUEUE_DEPTH;
+        if (idx == i) return 1; // if we reach i from j by going forward, i is younger
+        if (idx == int'(tail_ptr)) break;
+      end
     return 0;
-  endfunction
+endfunction
+
 
   // Decide if an entry is dispatchable
   function dispatch_kind_e check_dispatchable(int i);
