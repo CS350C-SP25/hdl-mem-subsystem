@@ -148,7 +148,7 @@ module request_scheduler #(
                     val_out_t = 'b0;
                 end else if (p == 3) begin
                     addr_out_t = {1'b0, 1'b1, 1'b0, 1'b1, 1'b0, bank_group_out_t, bank_out_t, {(14-LOWER_ADDR_BITS_C){1'b0}}, col_out_t};
-                    bank_state_params_in.precharge = bank_state_params_out.ready_to_access;
+                    bank_state_params_in.precharge = '0;
                     bank_state_params_in.precharge[i] = 1'b1;
                     val_out_t = 'b0;
                 end else begin // read command

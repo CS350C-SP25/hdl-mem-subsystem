@@ -214,13 +214,16 @@ class TestBench {
                     // For simplicity, we're just sending a pattern as cache
                     // line data In a real test, this would be the actual cache
                     // line data
+                    std::cout << "Cache Line: ";
                     for (int i = 0; i < 8; i++) {
                         uint64_t word =
                             m_memoryModel[txn.addr & ~0x3FULL + i * 8];
+                        std::cout << "0x" << std::hex << word << " | ";
                         for (int j = 0; j < 64; j++) {
                             m_dut->hc_line_in[i * 64 + j] = (word >> j) & 0x1;
                         }
                     }
+                    std::cout << "\n";
                     m_dut->hc_we_in = 1;
                     m_dut->hc_cl_in = 1;
                     m_dut->hc_valid_in = 1;
@@ -346,6 +349,30 @@ class TestBench {
             }
         }
 
+    }
+
+    void runRWTest(int num_operations) {
+        uint32_t start_addr = 0x00840; // tag bit is 0x1, set idx is 0x1, etc...
+        for (int i = 0; i < num_operations; i++) {
+            uint32_t set_addr = start_addr + (i * 64) % (1 << 19); // update set idx
+            // fill up ways of the set (supposed to be 3 ways but only 2 work bc of flawed pLRU impl...)
+            // the last iteration SHOULD evict 1 way
+            for (int j = 0; j < 3; j++) {
+                if (j == 3) {
+                    std::cout << "Should be evicting 1 way of the cache right now\n";
+                }
+                uint32_t addr = set_addr + (j * 2048) % (1 << 19); // update tag (so that it will be in a different way)
+                uint64_t value = 0xDEADBEEF00000000ULL | j;
+                cacheFill(addr);
+
+                driveInputs();
+
+                // Run simulation for a few cycles
+                for (int j = 0; j < 40; j++) {
+                    tick();
+                }
+            }
+        }
     }
 
     // Run a stress test with cache thrashing pattern
