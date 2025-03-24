@@ -19,28 +19,26 @@ module l1d_llc_tb (
     output logic l1d_lsu_ready_out,
     output logic [63:0] l1d_lsu_addr_out,
     output logic [63:0] l1d_lsu_value_out,
-    output logic l1d_lsu_write_complete_out,
-
-    // LLC interface inputs
-    input logic llc_cs_in,
-    input logic llc_flush_in,
-    input logic llc_hc_valid_in,
-    input logic llc_hc_ready_in,
-    input logic [18:0] llc_hc_addr_in,
-    input logic [63:0] llc_hc_value_in,
-    input logic llc_hc_we_in,
-    input logic [511:0] llc_hc_line_in
+    output logic l1d_lsu_write_complete_out
 );
 
-    // Internal signals for L1D-LLC communication
-    logic l1d_lc_valid_out, l1d_lc_ready_out;
-    logic [18:0] l1d_lc_addr_out;
-    logic [511:0] l1d_lc_value_out;
-    logic llc_hc_valid_out, llc_hc_ready_out;
-    logic [18:0] llc_hc_addr_out;
-    logic [511:0] llc_hc_line_out;
+    // Internal signals for L1D->LLC communication
+    logic l1d_lc_valid, l1d_lc_ready;
+    logic [PADDR_BITS-1:0] lc_addr_out;
+    logic [8*B-1:0] lc_value_out;
+    logic lc_we;
 
-    // L1D Cache instantiation
+
+    // Internal signals for LLC->L1D communication
+    logic lc_l1d_valid, lc_l1d_ready;
+    logic [PADDR_BITS-1:0] lc_addr_in;
+    logic [8*B-1:0] lc_value_in;
+    
+    // Test control
+    bit test_done;
+    int test_count;
+    
+    // DUT instances
     l1_data_cache #(
         .A(3),
         .B(64),
@@ -64,17 +62,16 @@ module l1d_llc_tb (
         .lsu_addr_out(l1d_lsu_addr_out),
         .lsu_value_out(l1d_lsu_value_out),
         .lsu_write_complete_out(l1d_lsu_write_complete_out),
-        .lc_ready_in(llc_hc_ready_out),
-        .lc_valid_in(llc_hc_valid_out),
-        .lc_addr_in(llc_hc_addr_out),
-        .lc_value_in(llc_hc_line_out),
-        .lc_valid_out(l1d_lc_valid_out),
-        .lc_ready_out(l1d_lc_ready_out),
-        .lc_addr_out(l1d_lc_addr_out),
-        .lc_value_out(l1d_lc_value_out)
+        .lc_ready_in(l1d_lc_ready),
+        .lc_valid_in(l1d_lc_valid),
+        .lc_addr_in(lc_addr_out),
+        .lc_value_in(lc_value_out),
+        .lc_valid_out(lc_l1d_valid),
+        .lc_ready_out(lc_l1d_ready),
+        .lc_addr_out(lc_addr_in),
+        .lc_value_out(lc_value_in)
     );
 
-    // Last Level Cache instantiation
     last_level_cache #(
         .A(8),
         .B(64),
@@ -92,18 +89,28 @@ module l1d_llc_tb (
     ) llc (
         .clk_in(clk),
         .rst_N_in(rst_N),
-        .cs_in(llc_cs_in),
-        .flush_in(llc_flush_in),
+        .cs_in(1'b1),  // LLC is always enabled in this testbench
+        .flush_in(1'b0),  // Flush controlled by testbench
         .hc_valid_in(l1d_lc_valid_out),
         .hc_ready_in(l1d_lc_ready_out),
         .hc_addr_in(l1d_lc_addr_out),
         .hc_value_in(l1d_lc_value_out),
-        .hc_we_in(1'b0),  // Set based on actual requirements
+        .hc_we_in(1'b0),  // Write enable controlled by testbench
         .hc_line_in(l1d_lc_value_out),
         .hc_valid_out(llc_hc_valid_out),
         .hc_ready_out(llc_hc_ready_out),
         .hc_addr_out(llc_hc_addr_out),
         .hc_line_out(llc_hc_line_out)
     );
+
+    // Monitor signals for debugging
+    always_ff @(posedge clk) begin
+        if (l1d_lsu_valid_out) begin
+            $display("L1D LSU Valid Out: %b", l1d_lsu_valid_out);
+        end
+        if (llc_hc_valid_out) begin
+            $display("LLC HC Valid Out: %b", llc_hc_valid_out);
+        end
+    end
 
 endmodule
