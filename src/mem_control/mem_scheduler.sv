@@ -138,7 +138,7 @@ module request_scheduler #(
                 bank_group_out_t = top.bank_group;
                 // Which command are we considering sending out to DRAM bank?
                 if (p == 1) begin // write command
-                    val_out_t = top.val_in;//not bursting??
+                    val_out_t = top.val_in;
                     addr_out_t = {1'b0, 1'b1, 1'b1, 1'b0, 1'b0, bank_group_out_t, bank_out_t, {(14-LOWER_ADDR_BITS_C){1'b0}}, col_out_t};
                 end else if (p == 2) begin // activate command
                     addr_out_t = {1'b0, 1'b0, 3'b0, bank_group_out_t, bank_out_t, {(14-LOWER_ADDR_BITS_R){1'b0}}, row_out_t};
@@ -155,10 +155,12 @@ module request_scheduler #(
                     addr_out_t = {1'b0, 1'b1, 1'b1, 1'b0, 1'b1, bank_group_out_t, bank_out_t, {(14-LOWER_ADDR_BITS_C){1'b0}}, col_out_t};
                     val_out_t = 'b0;//
                 end
-                
                 params_in[i].transfer_ready = 1'b1;
                 break;
             end
+        end
+        if (!valid_out_t) begin
+            addr_out_t = {PADDR_BITS{1'b1}};
         end
     endfunction
 
@@ -388,7 +390,6 @@ module request_scheduler #(
         reset_mem_queue_params(write_params_in);
         reset_mem_queue_params(precharge_params_in);
         reset_mem_queue_params(activation_params_in);
-        
         if (valid_in) begin
             // Access enter queue algorithm
             
@@ -442,7 +443,7 @@ module request_scheduler #(
                     );
                     last_read_t = cycle_counter;
                 end
-            end else if (!bursting) begin
+            end else if (!bursting && last_write + 4 <= cycle_counter) begin
                 process_bank_commands(
                     1,
                     write_params_in,

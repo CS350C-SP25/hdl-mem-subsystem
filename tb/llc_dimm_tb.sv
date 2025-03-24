@@ -107,8 +107,8 @@ module llc_dimm_tb (
         cs_N = mem_bus_addr_out[18];
         act = mem_bus_addr_out[17];
         addr = mem_bus_addr_out[16:0];
-        bg = mem_bus_addr_out[13:12];
-        ba = {1'b0, mem_bus_addr_out[11]};
+        bg = {1'b0, mem_bus_addr_out[13]};
+        ba = mem_bus_addr_out[12:11];
         dqm = '0;
     end
 
