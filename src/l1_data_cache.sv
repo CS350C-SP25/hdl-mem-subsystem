@@ -55,11 +55,12 @@ module l1_data_cache #(
 
   localparam PADDR_SIZE = PADDR_BITS;
   typedef struct packed {
-    logic [PADDR_SIZE-1:0] paddr;  // address
-    logic                  we;     // write enable
-    logic [63:0]           data;   // if writing data, the store value
-    logic [TAG_BITS-1:0]   tag;    // processor tag, not memory addr tag
-    logic                  valid;
+    logic [PADDR_SIZE-1:0]                 paddr;           // address
+    logic [PADDR_BITS-1:BLOCK_OFFSET_BITS] no_offset_addr;  // address without offset
+    logic                                  we;              // write enable
+    logic [63:0]                           data;            // if writing data, the store value
+    logic [TAG_BITS-1:0]                   tag;             // processor tag, not memory addr tag
+    logic                                  valid;
   } mshr_entry_t;
 
   mshr_entry_t                  mshr_entries [MSHR_COUNT-1:0];
@@ -121,15 +122,19 @@ module l1_data_cache #(
   logic [63:0] lc_value_out_comb;
   logic lc_we_out_comb;
 
+  localparam int BLOCK_OFFSET_BITS = $clog2(B);
   logic [PADDR_BITS-1:0] cur_addr;
+  logic [PADDR_BITS-1:BLOCK_OFFSET_BITS] no_offset_addr;
 
   assign cur_addr = lsu_addr_in_reg[PADDR_BITS-1:0];
+  assign no_offset_addr = lsu_addr_in_reg[PADDR_BITS-1:BLOCK_OFFSET_BITS];
 
   /* MSHR Combinational Variables */
   logic found;
   int   pos;
   logic isFree;
   int   freePos;
+  logic needToAdd;
 
   always_comb begin : l1d_combinational_logic
     lsu_valid_out_comb = 1'b0;
@@ -143,6 +148,7 @@ module l1_data_cache #(
     lc_value_out_comb = '0;
     lc_we_out_comb = 1'b0;
     next_state = cur_state;
+    needToAdd = 1;
 
     /* Cache Inputs */
     cache_flush_next = 0;
@@ -206,8 +212,7 @@ module l1_data_cache #(
         end else if (cache_hc_valid_out_reg) begin
           // HIT! We can move to sending data back to the top
           cache_hc_ready_next = 1;  // complete transcation
-          lsu_value_out_comb  = cache_hc_value_out_reg;
-          $display("cache hit...?");
+          lsu_value_out_comb = cache_hc_value_out_reg;
           next_state = SEND_RESP_HC;
         end
       end
@@ -215,7 +220,7 @@ module l1_data_cache #(
       CHECK_MSHR: begin
         // go through every MSHR and check if we already have one
         for (int i = 0; i < MSHR_COUNT; i++) begin
-          if (mshr_outputs[i].paddr == cur_addr) begin
+          if (mshr_outputs[i].no_offset_addr == no_offset_addr) begin
             found = 1;
             pos   = i;
           end
@@ -240,6 +245,9 @@ module l1_data_cache #(
             mshr_entries[freePos].tag = lsu_tag_in_reg;
 
             mshr_enqueue[freePos] = 1;
+          end else begin
+            // MSHRs are FULL, need to block
+            // TODO: figure out blocking here
           end
         end else begin
           // SECONDARY MISS -- let's add to the miss queue
@@ -255,10 +263,30 @@ module l1_data_cache #(
 
               mshr_enqueue[pos] = 1;
             end else begin
+              // TODO: FWD AND ALSO CHECKING THE ENTIRE QUEUE — HOW? IDK
               // if this is a read, we check if the data being requested is write in MSHR, if it is, we can just fwd
               // if it isn't, then we need to add to the queue as well
+              for (int i = 0; i < 16; i++) begin
+                if (mshr_queue_full[pos][i].paddr == cur_addr && mshr_queue_full[pos][i].valid && mshr_queue_full[pos][i].we) begin
+                  // we have a write, we can simply forward this value!
+                  lsu_value_out_comb = mshr_queue_full[pos][i].data;
+                  needToAdd = 0;
+                end
+              end
+
+              if (needToAdd) begin
+                // we weren't able to find any writes to the block, lets add a new queue entry
+                mshr_entries[pos].valid = 1;
+                mshr_entries[pos].paddr = cur_addr;
+                mshr_entries[pos].we = lsu_we_in_reg;
+                mshr_entries[pos].data = lsu_value_in_reg;
+                mshr_entries[pos].tag = lsu_tag_in_reg;
+
+                mshr_enqueue[pos] = 1;
+              end
             end
 
+            next_state = IDLE;
           end else begin
             // queue is full, cannot add, block request
             // TODO: FIGURE OUT BLOCKING HERE
@@ -343,10 +371,13 @@ module l1_data_cache #(
   end
 
   /* MSHR QUEUES */
+  typedef mshr_entry_t mshr_full_t[16-1:0];
+  mshr_full_t mshr_queue_full[MSHR_COUNT-1:0];
+
   genvar i;
   generate
     for (i = 0; i < MSHR_COUNT; i++) begin : mshr_queues
-      mem_req_queue #(
+      mshr_queue #(
           .QUEUE_SIZE(16),
           .mem_request_t(mshr_entry_t)
       ) mshr_queue_inst (
@@ -358,7 +389,8 @@ module l1_data_cache #(
           .cycle_count(32'd0),  // dummy input, needs to be connected properly
           .req_out(mshr_outputs[i]),
           .empty(mshr_empty[i]),
-          .full(mshr_full[i])
+          .full(mshr_full[i]),
+          .queue_read_only(mshr_queue_full[i])
       );
     end
   endgenerate

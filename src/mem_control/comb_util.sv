@@ -112,6 +112,61 @@ module mem_req_queue #(
     assign empty = (size == 0);
 endmodule: mem_req_queue;
 
+module mshr_queue #(
+    parameter QUEUE_SIZE=16,
+    type mem_request_t = logic // default placeholder
+) (
+    input logic clk_in,
+    input logic rst_in,
+    input logic enqueue_in,
+    input logic dequeue_in,
+    input mem_request_t req_in,
+    input logic [31:0] cycle_count,
+    output mem_request_t req_out,
+    output logic empty,
+    output logic full,
+    output mem_request_t queue_read_only[QUEUE_SIZE-1:0]
+);
+    mem_request_t queue[QUEUE_SIZE-1:0];
+    mem_request_t next_queue[QUEUE_SIZE-1:0];
+    logic [$clog2(QUEUE_SIZE)-1:0] next_head;
+    logic [$clog2(QUEUE_SIZE):0] next_size;
+    logic [$clog2(QUEUE_SIZE)-1:0] head;
+    logic [$clog2(QUEUE_SIZE):0] size;
+    always_ff @(posedge clk_in or posedge rst_in) begin
+        if (rst_in) begin
+            head <= 0;
+            size <= 0;
+        end else begin
+            queue <= next_queue;
+            size <= next_size;
+            head <= next_head;
+        end
+        // $display("Size %d", size);
+    end
+
+    always_comb begin
+        next_queue = queue;
+        next_size = size;
+        next_head = head;
+        
+        if (enqueue_in && !full) begin
+            next_queue[(head + size) % QUEUE_SIZE] = req_in;
+            next_size = size + 1;
+        end
+        if (dequeue_in && !empty) begin
+            next_size = size - 1;
+            next_head = (head + 4'b1) & {$clog2(QUEUE_SIZE){1'b1}}; // % QUEUE_SIZE
+            // $display("dequeuing \n");
+        end
+    end
+    // Full & Empty Flags
+    assign req_out = queue[head];
+    assign full = (size == QUEUE_SIZE);
+    assign empty = (size == 0);
+    assign queue_read_only = queue;
+endmodule: mshr_queue;
+
 // // CLB to assemble commands from scheduler for DIMM
 // module command_clb #(
 //     parameter int ROW_BITS = 8,    // bits to address rows
