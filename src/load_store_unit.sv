@@ -97,6 +97,10 @@ module load_store_unit #(
         .completion_value_out(completion_value_out),
         .completion_tag_out(completion_tag_out)
     );
+  always_ff @(posedge clk_in) begin
+    //$display("new cycle occurred at %0t", $time);
+  end
+
 
 endmodule : load_store_unit
 
@@ -789,6 +793,7 @@ module memory_interface #(
 
     // By the handshake rule, in S_DISPATCH we keep l1d_valid_out = 1
     // until L1D raises l1d_ready_in. Then we go S_WAIT_RESP => l1d_valid_out=0
+    
     always_ff @(posedge clk_in or negedge rst_N_in) begin
         if (!rst_N_in) begin
             lat_is_store       <= 1'b0;
@@ -824,6 +829,21 @@ module memory_interface #(
                         lat_value     <= dispatch_value_in;
                         lat_tag       <= dispatch_tag_in;
                     end
+                    if (l1d_valid_in) begin
+                        $display("l1d was ready, now we can go back to idle and accept another instruction");
+                        // On L1D’s response, produce completion
+                        completion_valid_out <= 1'b1;
+                        completion_tag_out   <= l1d_tag_in;
+
+                        if (!l1d_write_complete_in) begin
+                            // That means it's a load returning data
+                            completion_value_out <= l1d_value_in;
+                        end
+                        else begin
+                            // Store completion => no data
+                            completion_value_out <= 64'd0;
+                        end
+                    end
                 end
 
                 //------------------------------------------------------
@@ -837,20 +857,27 @@ module memory_interface #(
 
                     // Wait for L1D to say “ready” => consumes our request
                     if (l1d_ready_in) begin
+                        $display("l1d is ready in now!");
                         // Next cycle we drop l1d_valid_out in S_WAIT_RESP
                         l1d_valid_out <= 1'b0;
+                    end else begin
+                      $display("l1d is not ready in now!");
                     end
                 end
 
                 //------------------------------------------------------
-                S_WAIT_RESP: begin
-                    // We have sent the request and are waiting for L1D’s completion
+                S_WAIT_RESP: begin // what this should do is wait until ready in goes low, then go back to idle
+                    // We have sent a request and are waiting for L1D’s completion
                     l1d_valid_out <= 1'b0;  // No new request this cycle
+                    if (!l1d_ready_in) begin
+                      next_state = S_IDLE;
+                    end
+                    $display("i am in s_wait_resp, should see me more than once");
                     if (l1d_valid_in) begin
+                        $display("l1d was ready, now we can go back to idle and accept another instruction");
                         // On L1D’s response, produce completion
                         completion_valid_out <= 1'b1;
-                        completion_tag_out   <= l1d_tag_in;
-
+                        completion_tag_out  <= l1d_tag_in;
                         if (!l1d_write_complete_in) begin
                             // That means it's a load returning data
                             completion_value_out <= l1d_value_in;
