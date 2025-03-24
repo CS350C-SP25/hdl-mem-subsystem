@@ -58,6 +58,7 @@ module l1_data_cache #(
     logic                  we;     // write enable
     logic [63:0]           data;   // if writing data, the store value
     logic [TAG_BITS-1:0]   tag;    // processor tag, not memory addr tag
+    logic                  valid;
   } mshr_entry_t;
 
   mshr_entry_t                  mshr_entries [MSHR_COUNT-1:0];
@@ -149,21 +150,42 @@ module l1_data_cache #(
       CHECK_MSHR: begin
         // go through every MSHR and check if we already have one
         logic found = 0;
+        int   pos = 0;
+        logic isFree = 0;
+        int   freePos = 0;
         for (int i = 0; i < MSHR_COUNT; i++) begin
-          if (mshr_entries[i].paddr == cur_addr) begin
+          if (mshr_outputs[i].paddr == cur_addr) begin
             found = 1;
+            pos   = i;
+            if (!mshr_outputs[i].valid) begin // checks the top of the queue of any mshr, if ts not valid, mshr is free
+              isFree  = 1;
+              freePos = i;
+            end
           end
         end
 
-        $display("Found");
+
+
+        // add to the MSHR
+        if (isFree) begin
+          // there is a free MSHR, we will update the queue
+          mshr_entries[freePos].valid = 1;
+          mshr_entries[freePos].paddr = cur_addr;
+          mshr_entries[freePos].we = lsu_we_in_reg;
+          mshr_entries[freePos].data = lsu_value_in_reg;
+          mshr_enqueue[freePos] = 1;
+          // mshr_entries[freePos].tag = lsu_tag_;
+        end
+
+
       end
+
+
 
       default: begin
 
       end
     endcase
-
-    $monitor("[%0t] Current state is $d", $time, cur_state);
   end
 
   always @(posedge clk_in) begin
@@ -190,7 +212,7 @@ module l1_data_cache #(
       lc_value_out_reg <= '0;
       lc_we_out_reg <= 1'b0;
     end else if (!cs_N_in) begin
-      if (cur_state == IDLE) begin
+      if (next_state == IDLE) begin
         flush_in_reg <= flush_in;
         lsu_valid_in_reg <= lsu_valid_in;
         lsu_ready_in_reg <= lsu_ready_in;
@@ -234,12 +256,80 @@ module l1_data_cache #(
           .dequeue_in(mshr_dequeue[i]),
           .req_in(mshr_entries[i]),
           .cycle_count(32'd0),  // dummy input, needs to be connected properly
-          .req_out(mshr_outputs[i]),  // dummy output, needs to be connected properly
-          .empty(mshr_empty[i]),  // dummy output, needs to be connected properly
-          .full(mshr_full[i])  // dummy output, needs to be connected properly
+          .req_out(mshr_outputs[i]),
+          .empty(mshr_empty[i]),
+          .full(mshr_full[i])
       );
     end
   endgenerate
+
+
+
+
+  /* Generic Cache Storage  (This cache does NOT send an HC response upon LC response, L1D will need to handle that) */
+  // Define registers for inputs
+  logic cache_rst_N_reg;
+  logic cache_clk_reg;
+  logic cache_cs_reg;
+  logic cache_flush_reg;
+  logic cache_hc_valid_reg;
+  logic cache_hc_ready_reg;
+  logic [PADDR_BITS-1:0] cache_hc_addr_reg;
+  logic [64-1:0] cache_hc_value_reg;
+  logic cache_hc_we_reg;
+  logic [B*8-1:0] cache_cache_line_reg;
+  logic cache_cl_reg;
+  logic cache_lc_valid_in_reg;
+  logic cache_lc_ready_in_reg;
+  logic [PADDR_BITS-1:0] cache_lc_addr_in_reg;
+  logic [B*8-1:0] cache_lc_value_in_reg;
+
+  // Define registers for outputs
+  logic cache_lc_valid_out_reg;
+  logic cache_lc_ready_out_reg;
+  logic [PADDR_BITS-1:0] cache_lc_addr_out_reg;
+  logic [B*8-1:0] cache_lc_value_out_reg;
+  logic cache_we_out_reg;
+  logic cache_hc_valid_out_reg;
+  logic cache_hc_ready_out_reg;
+  logic cache_hc_we_out_reg;
+  logic [PADDR_BITS-1:0] cache_hc_addr_out_reg;
+  logic [64-1:0] cache_hc_value_out_reg;
+
+  cache #(
+      .A(A),
+      .B(B),
+      .C(C),
+      .W(64),
+      .ADDR_BITS(PADDR_BITS)
+  ) cache_module (
+      .rst_N_in(cache_rst_N_reg),
+      .clk_in(cache_clk_reg),
+      .cs_in(cache_cs_reg),
+      .flush_in(cache_flush_reg),
+      .hc_valid_in(cache_hc_valid_reg),
+      .hc_ready_in(cache_hc_ready_reg),
+      .hc_addr_in(cache_hc_addr_reg),
+      .hc_value_in(cache_hc_value_reg),
+      .hc_we_in(cache_hc_we_reg),
+      .cache_line_in(cache_cache_line_reg),
+      .cl_in(cache_cl_reg),
+      .lc_valid_out(cache_lc_valid_out_reg),
+      .lc_ready_out(cache_lc_ready_out_reg),
+      .lc_addr_out(cache_lc_addr_out_reg),
+      .lc_value_out(cache_lc_value_out_reg),
+      .we_out(cache_we_out_reg),
+      .lc_valid_in(cache_lc_valid_in_reg),
+      .lc_ready_in(cache_lc_ready_in_reg),
+      .lc_addr_in(cache_lc_addr_in_reg),
+      .lc_value_in(cache_lc_value_in_reg),
+      .hc_valid_out(cache_hc_valid_out_reg),
+      .hc_ready_out(cache_hc_ready_out_reg),
+      .hc_we_out(cache_hc_we_out_reg),
+      .hc_addr_out(cache_hc_addr_out_reg),
+      .hc_value_out(cache_hc_value_out_reg)
+  );
+
 
   assign lsu_valid_out = lsu_valid_out_reg;
   assign lsu_ready_out = lsu_ready_out_reg;
