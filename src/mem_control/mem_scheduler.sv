@@ -329,7 +329,7 @@ module request_scheduler #(
             val_out <= '0;
             bank_out <= '0;
             bank_group_out <= '0;
-            addr_out = {PADDR_BITS{1'b1}};
+            addr_out <= {PADDR_BITS{1'b1}};
         end else begin
             cycle_counter <= cycle_counter + 1;
             addr_out <= addr_out_t;

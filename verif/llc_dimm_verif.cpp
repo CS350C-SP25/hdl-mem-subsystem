@@ -138,7 +138,7 @@ class TestBench {
     }
 
     // Add a cache line fill operation
-    void cacheFill(uint32_t addr, const uint64_t* line_data) {
+    void cacheFill(uint32_t addr) {
         MemTransaction txn;
         txn.op = CACHE_LINE_FILL;
         txn.addr = addr;
@@ -149,8 +149,8 @@ class TestBench {
 
         // Update our memory model for the entire cache line (8 words)
         uint32_t aligned_addr = addr & ~0x3FULL;  // Align to 64-byte cache line
-        for (int i = 0; i < 8; i++) {
-            m_memoryModel[aligned_addr + i * 8] = line_data[i];
+        for (int i = 0; i < 16; i++) {
+            m_memoryModel[aligned_addr + i * 16] = aligned_addr;
         }
 
         m_pendingTransactions.push_back(txn);
@@ -314,7 +314,7 @@ class TestBench {
                 for (int j = 0; j < 8; j++) {
                     line_data[j] = randomValue();
                 }
-                cacheFill(addr, line_data);
+                cacheFill(addr);
             } else {
                 // Flush - least frequent
                 flush();
@@ -358,7 +358,7 @@ class TestBench {
             // fill up ways of the set (supposed to be 3 ways but only 2 work bc of flawed pLRU impl...)
             // the last iteration SHOULD evict 1 way
             for (int j = 0; j < 3; j++) {
-                if (j == 3) {
+                if (j == 2) {
                     std::cout << "Should be evicting 1 way of the cache right now\n";
                 }
                 uint32_t addr = set_addr + (j * 2048) % (1 << 19); // update tag (so that it will be in a different way)
@@ -455,8 +455,11 @@ int main(int argc, char** argv) {
     // std::cout << "\nRunning random access test..." << std::endl;
     // tb.runRandomTest(100);
 
-    std::cout << "\nRunning sequential access test..." << std::endl;
-    tb.runSequentialTest(8);
+    // std::cout << "\nRunning sequential access test..." << std::endl;
+    // tb.runSequentialTest(8);
+
+    std::cout << "\nRunning Cache R/W test..." << std::endl;
+    tb.runRWTest(1);
 
     // std::cout << "\nRunning cache thrashing test..." << std::endl;
     // tb.runThrashingTest(30);
