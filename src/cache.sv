@@ -319,7 +319,7 @@ module cache #(
 
         tag_temp[hit_way_reg][cur_set].valid = 1;
         tag_temp[hit_way_reg][cur_set].tag = cur_tag;
-        tag_temp[hit_way_reg][cur_set].dirty = lc_valid_reg ? 0 : 1; // only dirty if its a write from hc, not lc
+        tag_temp[hit_way_reg][cur_set].dirty = (lc_valid_reg || cl_in_reg) ? 0 : 1; // only dirty if its a write from hc, not lc
 
         next_state = IDLE;
       end

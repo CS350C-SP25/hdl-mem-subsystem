@@ -255,6 +255,7 @@ module l1_data_cache #(
 
               mshr_enqueue[pos] = 1;
             end else begin
+              // TODO: FWD AND ALSO CHECKING THE ENTIRE QUEUE — HOW? IDK
               // if this is a read, we check if the data being requested is write in MSHR, if it is, we can just fwd
               // if it isn't, then we need to add to the queue as well
             end
@@ -343,10 +344,12 @@ module l1_data_cache #(
   end
 
   /* MSHR QUEUES */
+  logic mshr_queue_full[i];
+
   genvar i;
   generate
     for (i = 0; i < MSHR_COUNT; i++) begin : mshr_queues
-      mem_req_queue #(
+      mshr_queue #(
           .QUEUE_SIZE(16),
           .mem_request_t(mshr_entry_t)
       ) mshr_queue_inst (
@@ -358,7 +361,8 @@ module l1_data_cache #(
           .cycle_count(32'd0),  // dummy input, needs to be connected properly
           .req_out(mshr_outputs[i]),
           .empty(mshr_empty[i]),
-          .full(mshr_full[i])
+          .full(mshr_full[i]),
+          .queue_read_only(queue_full[i])
       );
     end
   endgenerate
