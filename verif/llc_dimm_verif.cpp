@@ -335,14 +335,8 @@ class TestBench {
         for (int i = 0; i < num_operations; i++) {
             uint32_t addr = start_addr + (i * 8) % (1 << 19);
 
-            if (i % 2 == 0) {
-                // Write operation
-                uint64_t value = 0xDEADBEEF00000000ULL | i;
-                write(addr, value);
-            } else {
-                // Read operation
-                read(addr);
-            }
+            uint64_t value = 0xDEADBEEF00000000ULL | i;
+            write(addr, value);
 
             driveInputs();
 

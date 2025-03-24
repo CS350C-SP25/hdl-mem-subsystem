@@ -42,7 +42,7 @@ module sdram_bank_state #(
                     if (cycle_count[i] == 0) begin
                         // Unblock the bank after the latency period has passed
                         blocked_reg[i] <= 0;
-                        ready[i] <= 1; // Bank is now ready
+                        // ready[i] <= 1; // Bank is now ready
                     end else begin
                         // Keep the bank blocked and increment the cycle count
                         cycle_count[i] <= cycle_count[i] - 1;
@@ -52,7 +52,7 @@ module sdram_bank_state #(
                     blocked_reg[i] <= 1;
                     cycle_count[i] <= PRECHARGE_LATENCY; // Start counting cycles for precharge latency
                     active[i] <= 0;
-                    ready[i] <= 0; // Bank is not ready during precharge
+                    ready[i] <= 1; // Bank is not ready during precharge
                 end else if (activate[i]) begin
                     // Activate operation: store the row address and mark the bank as active
                     $display("Activated %d", i);
