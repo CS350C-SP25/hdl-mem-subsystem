@@ -122,7 +122,7 @@ module request_scheduler #(
         done = 1'b0;
         valid_out_t = 1'b0;
         for (int i = 0; i < BANKS; i++) begin
-            if (!params_out[i].ready_empty_out && 
+            if (!done && !params_out[i].ready_empty_out && 
                 !bank_state_params_out.blocked[i[$clog2(BANKS)-1:0]] && 
                 (p == 2 || p == 3 || 
                 params_out[i].ready_top_out.row == bank_state_params_out.active_row_out[i[$clog2(BANKS)-1:0]].row_out)) begin
@@ -339,8 +339,8 @@ module request_scheduler #(
             valid_out <= valid_out_t;
             last_read <= last_read_t;
             last_write <= last_write_t;
-            if (valid_out) begin
-                $display("[SCHEDULER] Scheduling cmd %b at addr %x", cmd_out_t, addr_out_t);
+            if (valid_out_t) begin
+                $display("[SCHEDULER] Scheduling cmd %b at row %x col %x", cmd_out_t, row_out_t, col_out_t);
             end
             // $display("Read Queue Ready Top %b", read_params_out[17].ready_top_out.row);
             // $display("Activation Queue Pending Top %b", activation_params_out[17].pending_top_out.row);
@@ -396,25 +396,26 @@ module request_scheduler #(
             // Queue selection logic
             if (bank_state_params_out.ready_to_access[bank_idx]) begin
                 // Precharged but not activated
-                // $display("adding to activation queue idx %d\n", bank_idx);
+                $display("adding to activation queue idx %d addr %x\n", bank_idx, mem_bus_addr_in);
                 activation_params_in[bank_idx].enqueue_in = 1'b1;
                 activation_params_in[bank_idx].incoming = 1'b1;
                 activation_params_in[bank_idx].req_in = incoming_req;
             end else if (bank_state_params_out.active_bank[bank_idx] && 
                         bank_state_params_out.active_row_out[bank_idx] == row_in) begin
-                // $display("adding to r/w queue\n");
                 // Active bank, put in respective queue
                 if (write_in) begin
+                    $display("adding to write queue addr %x\n", mem_bus_addr_in);
                     write_params_in[bank_idx].enqueue_in = 1'b1;
                     write_params_in[bank_idx].incoming = 1'b1;
                     write_params_in[bank_idx].req_in = incoming_req;
                 end else begin
+                    $display("adding to read queue addr %x\n", mem_bus_addr_in);
                     read_params_in[bank_idx].enqueue_in = 1'b1;
                     read_params_in[bank_idx].incoming = 1'b1;
                     read_params_in[bank_idx].req_in = incoming_req;
                 end
             end else begin
-                // $display("adding to precharge queue %d\n", incoming_req.bank_group * incoming_req.bank);
+                $display("adding to precharge queue %d\n", incoming_req.bank_group * incoming_req.bank);
                 precharge_params_in[bank_idx].enqueue_in = 1'b1;
                 precharge_params_in[bank_idx].req_in = incoming_req;
             end
