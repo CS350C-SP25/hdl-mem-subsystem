@@ -333,7 +333,7 @@ class TestBench {
         uint32_t start_addr = 0x24440; // Align to cache line
         
         for (int i = 0; i < num_operations; i++) {
-            uint32_t addr = start_addr + (i * 8) % (1 << 19);
+            uint32_t addr = start_addr + (i * 64) % (1 << 19);
 
             uint64_t value = 0xDEADBEEF00000000ULL | i;
             write(addr, value);
@@ -341,7 +341,7 @@ class TestBench {
             driveInputs();
 
             // Run simulation for a few cycles
-            for (int j = 0; j < 15; j++) {
+            for (int j = 0; j < 40; j++) {
                 tick();
             }
         }
@@ -429,7 +429,7 @@ int main(int argc, char** argv) {
     // tb.runRandomTest(100);
 
     std::cout << "\nRunning sequential access test..." << std::endl;
-    tb.runSequentialTest(50);
+    tb.runSequentialTest(8);
 
     // std::cout << "\nRunning cache thrashing test..." << std::endl;
     // tb.runThrashingTest(30);

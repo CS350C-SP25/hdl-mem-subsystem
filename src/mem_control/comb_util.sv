@@ -20,7 +20,7 @@ module address_parser #(
     localparam BANK_BITS = $clog2(BANKS_PER_GROUP);
     localparam BANK_GRP_BITS = $clog2(BANK_GROUPS);
     localparam LOWER_BITS = COL_BITS+BANK_BITS+BANK_GRP_BITS;
-    localparam OFFSET_BITS = 2;
+    localparam OFFSET_BITS = 3;
 
     always_comb begin
         col_out = mem_bus_addr_in[OFFSET_BITS+COL_BITS-1:OFFSET_BITS];
@@ -318,7 +318,7 @@ module command_sender #(
             end
 
             if ((!empty && req_out.cycle_counter + CAS_LATENCY - 5 >= cycle_counter && req_out.cycle_counter + CAS_LATENCY <= cycle_counter) 
-                || (read_burst_ready && burst_counter < 6)) begin
+                || ((read_burst_ready || read_bursting) && burst_counter < 6)) begin
                 bursting <= 1'b1;
             end else begin
                 bursting <= 1'b0;
@@ -353,10 +353,11 @@ module command_sender #(
         end else begin
             if (read_burst_ready) begin
                 read_bursting <= 1'b1;
-            end else if (read_bursting) begin
+            end
+            if (read_bursting) begin
                 val_out[{(burst_counter + read_col_start)}[2:0]] = mem_bus_value_io;
                 burst_counter <= burst_counter == 7 ? 0 : burst_counter + 1;
-                read_burst_ready = burst_counter != 7;
+                read_burst_ready = 'b0;
                 read_bursting <= burst_counter != 7;
             end else if ((cmd_in == WRITE && valid_in) || write_bursting) begin
                 burst_counter <= burst_counter == 7 ? 0 : burst_counter + 1;

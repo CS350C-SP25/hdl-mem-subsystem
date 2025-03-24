@@ -119,10 +119,9 @@ module request_scheduler #(
         output logic [$clog2(BANK_GROUPS)-1:0] bank_group_out_t, 
         output logic [PADDR_BITS-1:0] addr_out_t
     );
-        done = 1'b0;
         valid_out_t = 1'b0;
         for (int i = 0; i < BANKS; i++) begin
-            if (!done && !params_out[i].ready_empty_out && 
+            if (!params_out[i].ready_empty_out && 
                 !bank_state_params_out.blocked[i[$clog2(BANKS)-1:0]] && 
                 (p == 2 || p == 3 || 
                 params_out[i].ready_top_out.row == bank_state_params_out.active_row_out[i[$clog2(BANKS)-1:0]].row_out)) begin
@@ -443,7 +442,7 @@ module request_scheduler #(
                     );
                     last_read_t = cycle_counter;
                 end
-            end else if (!bursting && last_write < cycle_counter - 4) begin
+            end else if (!bursting) begin
                 process_bank_commands(
                     1,
                     write_params_in,

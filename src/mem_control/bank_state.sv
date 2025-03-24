@@ -60,7 +60,7 @@ module sdram_bank_state #(
                     blocked_reg[i] <= 1;
                     cycle_count[i] <= ACTIVATION_LATENCY;
                     active[i] <= 1; // Bank is active
-                    ready[i] <= 0;  // Bank is not ready during activation
+                    ready[i] <= 0;  // Bank is not ready to access (it is accessible)
                 end
             end
         end
