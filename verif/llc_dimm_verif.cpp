@@ -357,8 +357,8 @@ class TestBench {
             uint32_t set_addr = start_addr + (i * 64) % (1 << 19); // update set idx
             // fill up ways of the set (supposed to be 3 ways but only 2 work bc of flawed pLRU impl...)
             // the last iteration SHOULD evict 1 way
-            for (int j = 0; j < 3; j++) {
-                if (j == 2) {
+            for (int j = 0; j < 5; j++) {
+                if (j >= 2) {
                     std::cout << "Should be evicting 1 way of the cache right now\n";
                 }
                 uint32_t addr = set_addr + (j * 2048) % (1 << 19); // update tag (so that it will be in a different way)

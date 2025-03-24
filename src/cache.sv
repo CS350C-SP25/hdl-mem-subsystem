@@ -333,7 +333,8 @@ module cache #(
         lc_addr_out_comb = {
           tag_array[hit_way_reg][cur_set].tag, cur_set, {BLOCK_OFFSET_BITS{1'b0}}
         };
-
+        
+        $display("evicting in the cahce module\n");
         evict_data = cache_data[hit_way_reg][cur_set];
         next_state = EVICT_WAIT;
       end

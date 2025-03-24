@@ -1,3 +1,4 @@
+CXX ?= ccache clang++
 # Try to use /u/nate/verilator if it exists; otherwise, use Verilator from PATH
 ifneq ($(wildcard /u/nate/verilator),)
     VERILATOR := /u/nate/verilator
@@ -18,7 +19,7 @@ $(info OBJCACHE: $(OBJCACHE))
 VERILATOR ?= /u/nate/verilator
 
 # Flags
-VFLAGS = --binary -j $$(( `nproc` - 1 )) --trace --trace-underscore --trace-structs
+VFLAGS = --binary -j $$(( `nproc` - 1 )) --trace --trace-underscore --trace-structs --compiler clang
 
 # Target-specific flags
 DIMM_VFLAGS = $(VFLAGS) --top-module ddr4_dimm
