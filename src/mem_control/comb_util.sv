@@ -8,8 +8,8 @@ module address_parser #(
     parameter int ROW_BITS = 8,
     parameter int COL_BITS = 4,
     parameter int PADDR_BITS = 64, // word size
-    parameter int BANK_GROUPS = 4,
-    parameter int BANKS_PER_GROUP = 2
+    parameter int BANK_GROUPS = 2,
+    parameter int BANKS_PER_GROUP = 4
 ) (
     input  logic [PADDR_BITS-1:0] mem_bus_addr_in,
     output logic [ROW_BITS-1:0] row_out,
@@ -20,12 +20,13 @@ module address_parser #(
     localparam BANK_BITS = $clog2(BANKS_PER_GROUP);
     localparam BANK_GRP_BITS = $clog2(BANK_GROUPS);
     localparam LOWER_BITS = COL_BITS+BANK_BITS+BANK_GRP_BITS;
+    localparam OFFSET_BITS = 2;
 
     always_comb begin
-        col_out = mem_bus_addr_in[COL_BITS-1:0];
-        ba_out = mem_bus_addr_in[COL_BITS+BANK_BITS-1:COL_BITS];
-        bg_out = mem_bus_addr_in[LOWER_BITS-1:COL_BITS+BANK_BITS];
-        row_out = mem_bus_addr_in[LOWER_BITS+ROW_BITS-1:LOWER_BITS];
+        col_out = mem_bus_addr_in[OFFSET_BITS+COL_BITS-1:OFFSET_BITS];
+        ba_out = mem_bus_addr_in[OFFSET_BITS+COL_BITS+BANK_BITS-1:COL_BITS+OFFSET_BITS];
+        bg_out = mem_bus_addr_in[LOWER_BITS+OFFSET_BITS-1:COL_BITS+BANK_BITS+OFFSET_BITS];
+        row_out = mem_bus_addr_in[LOWER_BITS+ROW_BITS+OFFSET_BITS-1:LOWER_BITS+OFFSET_BITS];
         // $display("%d %d %d %d", col_out, ba_out, bg_out, row_out);
     end
 endmodule
@@ -34,8 +35,8 @@ module dimm_to_paddr #(
     parameter int ROW_BITS = 8,
     parameter int COL_BITS = 4,
     parameter int PADDR_BITS = 19, // word size
-    parameter int BANK_GROUPS = 4,
-    parameter int BANKS_PER_GROUP = 2
+    parameter int BANK_GROUPS = 2,
+    parameter int BANKS_PER_GROUP = 4
 ) (
     input logic [ROW_BITS-1:0] row_in,
     input logic [COL_BITS-1:0] col_in,
@@ -226,7 +227,7 @@ module command_sender #(
     parameter int CAS_LATENCY = 22,
     parameter int ACTIVATION_LATENCY = 8,  // latency in cycles to activate row buffer
     parameter int PRECHARGE_LATENCY = 5,  // latency in cycles to precharge (clear row buffer)
-    parameter int BANK_GROUPS = 4,
+    parameter int BANK_GROUPS = 2,
     parameter int BANKS_PER_GROUP = 4,       // banks per group
     parameter int ROW_BITS = 8,    // bits to address rows
     parameter int COL_BITS = 4,     // bits to address columns
@@ -298,8 +299,8 @@ module command_sender #(
         ) paddr_converter (
         .row_in(row_in),
         .col_in(col_in),
-        .bg_in(bank_group_in[1:0]),     // Bank group id
-        .ba_in(bank_in[0:0]),      // Bank id
+        .bg_in(bank_group_in[0:0]),     // Bank group id
+        .ba_in(bank_in[1:0]),      // Bank id
         .mem_bus_addr_out(read_paddr)
     );
 

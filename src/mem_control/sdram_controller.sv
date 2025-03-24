@@ -21,7 +21,7 @@ module ddr4_sdram_controller #(
 
     // Following parameters added by us
     parameter int BUS_WIDTH = 16,  // bus width per chip
-    parameter int BANK_GROUPS = 4,
+    parameter int BANK_GROUPS = 2,
     parameter int BANKS_PER_GROUP = 4,
     parameter int BANKS = BANK_GROUPS * BANKS_PER_GROUP
 ) (

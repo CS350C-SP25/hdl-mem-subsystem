@@ -56,8 +56,8 @@ module llc_dimm_tb (
         .ROW_BITS(8),
         .COL_BITS(4),
         .BUS_WIDTH(16),
-        .BANK_GROUPS(4),
-        .BANKS_PER_GROUP(2)
+        .BANK_GROUPS(2),
+        .BANKS_PER_GROUP(4)
     ) llc (
         .clk_in(clk),
         .rst_N_in(rst_N),

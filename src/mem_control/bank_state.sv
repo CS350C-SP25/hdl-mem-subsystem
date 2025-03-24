@@ -1,7 +1,7 @@
 module sdram_bank_state #(
     parameter ROW_WIDTH = 14, // Number of bits to address rows (e.g., 14 bits for 16k rows)
     parameter NUM_GROUPS = 2, // Number of bank groups
-    parameter BANKS_PER_GROUP = 2, // Number of banks per group
+    parameter BANKS_PER_GROUP = 4, // Number of banks per group
     parameter BANKS = NUM_GROUPS * BANKS_PER_GROUP, // Total number of banks
     parameter ACTIVATION_LATENCY = 8,
     parameter PRECHARGE_LATENCY = 5,

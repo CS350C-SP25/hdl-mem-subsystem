@@ -33,8 +33,8 @@ module last_level_cache #(
     parameter int ROW_BITS = 8,  // log2(ROWS)
     parameter int COL_BITS = 4,  // log2(COLS)
     parameter int BUS_WIDTH = 16,  // bus width per chip
-    parameter int BANK_GROUPS = 4,
-    parameter int BANKS_PER_GROUP = 2
+    parameter int BANK_GROUPS = 2,
+    parameter int BANKS_PER_GROUP = 4
 ) (
     // Generic
     input logic clk_in,

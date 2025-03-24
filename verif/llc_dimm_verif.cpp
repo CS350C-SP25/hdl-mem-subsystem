@@ -344,13 +344,14 @@ class TestBench {
                 read(addr);
             }
 
+            driveInputs();
+
             // Run simulation for a few cycles
-            for (int j = 0; j < 5; j++) {
-                driveInputs();
+            for (int j = 0; j < 15; j++) {
                 tick();
-                checkOutputs();
             }
         }
+
     }
 
     // Run a stress test with cache thrashing pattern

@@ -1,7 +1,7 @@
 module request_scheduler #(
     parameter int BUS_WIDTH = 16,  // bus width per chip
-    parameter int BANK_GROUPS = 4,
-    parameter int BANKS_PER_GROUP = 2,       // banks per group
+    parameter int BANK_GROUPS = 2,
+    parameter int BANKS_PER_GROUP = 4,       // banks per group
     parameter int ROW_BITS = 8,    // bits to address rows
     parameter int COL_BITS = 4,     // bits to address columns
     parameter int PADDR_BITS = 19,
@@ -213,7 +213,7 @@ module request_scheduler #(
     logic [2:0] cmd_out_t; // 0 is read, 1 is write, 2 is activate, 3 is precharge; if valid_out is 0 then block
     logic valid_out_t;
     
-    assign bank_idx = (bank_group_in * BANKS_PER_GROUP[$clog2(BANK_GROUPS) + $clog2(BANKS_PER_GROUP) - 1:0]) + {{$clog2(BANK_GROUPS){1'b0}}, bank_in};
+    assign bank_idx = ({bank_group_in[0], bank_in});
 
     address_parser #(
         .ROW_BITS(ROW_BITS),
@@ -340,7 +340,7 @@ module request_scheduler #(
             last_read <= last_read_t;
             last_write <= last_write_t;
             if (valid_out_t) begin
-                $display("[SCHEDULER] Scheduling cmd %b at row %x col %x", cmd_out_t, row_out_t, col_out_t);
+                $display("[SCHEDULER] Scheduling cmd %b at row %x col %x bank %x", cmd_out_t, row_out_t, col_out_t, {bank_group_out, bank_out});
             end
             // $display("Read Queue Ready Top %b", read_params_out[17].ready_top_out.row);
             // $display("Activation Queue Pending Top %b", activation_params_out[17].pending_top_out.row);

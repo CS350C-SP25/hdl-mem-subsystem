@@ -18,7 +18,7 @@ $(info OBJCACHE: $(OBJCACHE))
 VERILATOR ?= /u/nate/verilator
 
 # Flags
-VFLAGS = --binary -j $$(( `nproc` - 1 )) --trace --trace-depth 1000
+VFLAGS = --binary -j $$(( `nproc` - 1 )) --trace
 
 # Target-specific flags
 DIMM_VFLAGS = $(VFLAGS) --top-module ddr4_dimm
@@ -73,7 +73,7 @@ l1d: clean ${L1D_BIN}
 	./${L1D_BIN}
 
 # Compile and run for System Controller and DIMM testbench
-sd_ctrl_dimm: $(SD_CTRL_DIMM_BIN)
+sd_ctrl_dimm: clean $(SD_CTRL_DIMM_BIN)
 	./$(SD_CTRL_DIMM_BIN)
 
 # Compile with Verilator

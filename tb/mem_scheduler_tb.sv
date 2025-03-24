@@ -1,7 +1,7 @@
 module request_scheduler_tb;
     parameter int PADDR_BITS = 19;
-    parameter int BANKS_PER_GROUP = 2;
-    parameter int BANK_GROUPS = 4;
+    parameter int BANKS_PER_GROUP = 4;
+    parameter int BANK_GROUPS = 2;
     // Testbench signals
     logic clk_in;
     logic rst_in;
