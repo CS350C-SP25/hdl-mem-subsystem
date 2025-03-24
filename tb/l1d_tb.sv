@@ -21,7 +21,7 @@ module l1_data_cache_tb;
   reg lc_ready_in;  // Tie to 1 for now or control in testcases
   reg lc_valid_in;
   reg [PADDR_BITS-1:0] lc_addr_in;
-  reg [63:0] lc_value_in;
+  reg [511:0] lc_value_in;
 
   // Outputs
   wire lsu_valid_out;
@@ -32,7 +32,7 @@ module l1_data_cache_tb;
   wire lc_valid_out;
   reg lc_ready_out;  // Control in testbench
   wire [PADDR_BITS-1:0] lc_addr_out;
-  wire [63:0] lc_value_out;
+  wire [511:0] lc_value_out;
   wire lc_we_out;
 
   // Instantiate the device Under Test (dut)
@@ -86,7 +86,7 @@ module l1_data_cache_tb;
     lc_ready_in = 1'b1;
     lc_valid_in = 1'b0;
     lc_addr_in = {PADDR_BITS{1'b0}};
-    lc_value_in = 64'b0;
+    lc_value_in = '0;
     lsu_ready_out = 1'b1;
     lc_ready_out = 1'b1;
   endfunction
@@ -167,7 +167,7 @@ module l1_data_cache_tb;
   endfunction
 
   // Function to simulate LC data
-  function void simulate_lc_data(input logic [PADDR_BITS-1:0] addr, input logic [63:0] value);
+  function void simulate_lc_data(input logic [PADDR_BITS-1:0] addr, input logic [511:0] value);
     $display("  Simulating LC providing data %h for address %h", value, addr);
     lc_valid_in = 1'b1;
     lc_addr_in  = addr;
@@ -197,7 +197,7 @@ module l1_data_cache_tb;
     read_from_lsu(64'h1000);
     check_lc_request(1'b0, {PADDR_BITS{1'b0}},
                      "Basic read miss test");  // Assuming 0 for lc_addr_out in first miss.
-    simulate_lc_data(lc_addr_out, 64'hDEADBEEF);
+    simulate_lc_data(lc_addr_out, 512'hDEADBEEF);
     #20;
     read_from_lsu(64'h1000);
     check_lsu_read_data(64'hDEADBEEF, "Read miss test after LC response");
