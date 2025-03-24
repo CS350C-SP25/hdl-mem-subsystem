@@ -342,7 +342,139 @@ module load_store_unit_tb_complex;
     expected_completions.push_back(4'h3);
     expected_values.push_back(64'hbeefcace);
     wait_for_completions();
-    
+        // === Test 4: Store-to-Load Forwarding with Multiple Stores ===
+    $display("\n=== Test 4: Store-to-Load Forwarding with Multiple Stores ===");
+    reset_dut();
+    issue_instruction(4'h8, 1); provide_data(4'h8, 64'hF000, 64'h1111_1111);
+    issue_instruction(4'h9, 1); provide_data(4'h9, 64'hF000, 64'h2222_2222);
+    repeat (1) @(posedge clk);
+    issue_instruction(4'hA, 0); provide_data(4'hA, 64'hF000);
+    repeat (1) @(posedge clk);
+    signal_store_complete(4'h8);
+    repeat (1) @(posedge clk);
+    signal_store_complete(4'h9);
+    expected_completions.push_back(4'h8); expected_values.push_back(64'h0);
+    expected_completions.push_back(4'hA); expected_values.push_back(64'h2222_2222);
+    expected_completions.push_back(4'h9); expected_values.push_back(64'h0);
+    wait_for_completions();
+
+    // === Test 5: Load Before Store (No Forwarding) ===
+    $display("\n=== Test 5: Load Before Store ===");
+    reset_dut();
+    issue_instruction(4'hB, 0); provide_data(4'hB, 64'h1000);
+    issue_instruction(4'hC, 1); provide_data(4'hC, 64'h1000, 64'h1234_ABCD);
+    provide_l1d_response(4'hB, 64'hFFFF_FFFF);
+    repeat (3) @(posedge clk);
+    signal_store_complete(4'hC);
+    expected_completions.push_back(4'hB); expected_values.push_back(64'hFFFF_FFFF);
+    expected_completions.push_back(4'hC); expected_values.push_back(64'h0);
+    wait_for_completions();
+
+    // === Test 6: Multiple Older Stores ===
+    $display("\n=== Test 6: Multiple Older Stores ===");
+    reset_dut();
+    issue_instruction(4'hD, 1); provide_data(4'hD, 64'h2000, 64'h1111_1111);
+    issue_instruction(4'hE, 1); provide_data(4'hE, 64'h2000, 64'h2222_2222);
+    issue_instruction(4'hF, 0); provide_data(4'hF, 64'h2000);
+    repeat (3) @(posedge clk);
+    signal_store_complete(4'hD);
+    repeat (6) @(posedge clk);
+    signal_store_complete(4'hE);
+    expected_completions.push_back(4'hD); expected_values.push_back(64'h0);
+    expected_completions.push_back(4'hE); expected_values.push_back(64'h0);
+    expected_completions.push_back(4'hF); expected_values.push_back(64'h2222_2222);
+    wait_for_completions();
+
+    // === Test 7: Queue Full Check ===
+    $display("\n=== Test 7: Queue Full Check ===");
+    reset_dut();
+    for(int i = 0; i < QUEUE_DEPTH; i++) begin
+      issue_instruction(i[3:0], 1);
+      provide_data(i[3:0], 64'h3000 + i*8, 64'hC0DE0000 + 64'(i));
+    end
+    signal_store_complete(4'h0);
+    // Attempt to issue one more (should block until there's space)
+    issue_instruction(4'h0, 1);
+    provide_data(4'h0, 64'hdead, 64'hfeed);
+    signal_store_complete(4'h0);
+    wait_for_completions(50);
+
+    // === Test 8: Mixed Address Operations ===
+    $display("\n=== Test 8: Mixed Address Operations ===");
+    reset_dut();
+    issue_instruction(4'h1, 1); provide_data(4'h1, 64'hA000, 64'hAAA);
+    issue_instruction(4'h2, 0); provide_data(4'h2, 64'hB000);
+    issue_instruction(4'h3, 1); provide_data(4'h3, 64'hB000, 64'hBBB);
+    issue_instruction(4'h4, 0); provide_data(4'h4, 64'hA000);
+    signal_store_complete(4'h1);
+    provide_l1d_response(4'h2, 64'hCCC);
+    repeat (3) @(posedge clk);
+    signal_store_complete(4'h3);
+    expected_completions = {4'h1, 4'h2, 4'h3, 4'h4};
+    expected_values = {64'h0, 64'hCCC, 64'h0, 64'hAAA};
+    wait_for_completions();
+
+    // === Test 9: Unresolved Store Blocking Load ===
+    $display("\n=== Test 9: Unresolved Store Blocking ===");
+    reset_dut();
+    issue_instruction(4'h5, 1);
+    issue_instruction(4'h6, 0); provide_data(4'h6, 64'hC000);
+    repeat(5) @(posedge clk);
+    provide_data(4'h5, 64'hC000, 64'hDEC0DE);
+    repeat (3) @(posedge clk);
+    signal_store_complete(4'h5);
+    expected_completions.push_back(4'h5); expected_values.push_back(64'h0);
+    expected_completions.push_back(4'h6); expected_values.push_back(64'hDEC0DE);
+    wait_for_completions();
+
+    // === Test 10: Multiple In-Flight Operations ===
+        // === Test 10: Multiple In-Flight Operations ===
+    $display("\n=== Test 10: Multiple In-Flight Operations ===");
+    reset_dut();
+
+    issue_instruction(4'h0, 0);
+    provide_data(4'h0, 64'hA000);
+    issue_instruction(4'h1, 0);
+    provide_data(4'h1, 64'hA040);
+    issue_instruction(4'h2, 0);
+    provide_data(4'h2, 64'hA080);
+    issue_instruction(4'h3, 0);
+    provide_data(4'h3, 64'hA0C0);
+    issue_instruction(4'h4, 0);
+    provide_data(4'h4, 64'hA100);
+    issue_instruction(4'h5, 0);
+    provide_data(4'h5, 64'hA140);
+
+    // Simulate delay before responses come back
+    repeat (10) @(posedge clk);
+
+    provide_l1d_response(4'h0, 64'hAAA);
+    expected_completions.push_back(4'h0);
+    expected_values.push_back(64'hAAA);
+
+    provide_l1d_response(4'h1, 64'hBBB);
+    expected_completions.push_back(4'h1);
+    expected_values.push_back(64'hBBB);
+
+    provide_l1d_response(4'h2, 64'hCCC);
+    expected_completions.push_back(4'h2);
+    expected_values.push_back(64'hCCC);
+
+    provide_l1d_response(4'h3, 64'hDDD);
+    expected_completions.push_back(4'h3);
+    expected_values.push_back(64'hDDD);
+
+    provide_l1d_response(4'h4, 64'hEEE);
+    expected_completions.push_back(4'h4);
+    expected_values.push_back(64'hEEE);
+
+    provide_l1d_response(4'h5, 64'hFFF);
+    expected_completions.push_back(4'h5);
+    expected_values.push_back(64'hFFF);
+
+    wait_for_completions();
+
+
     $display("\n=== Test Summary ===");
     $display("Tests passed: %0d, Tests failed: %0d", test_passed, test_failed);
     if (test_failed == 0) $display("** ALL TESTS PASSED **");
