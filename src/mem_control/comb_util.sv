@@ -308,7 +308,7 @@ module command_sender #(
         if (!rst_N_in) begin
             cycle_counter <= 0;
         end else begin
-            if (cmd_in == READ) begin
+            if (cmd_in == READ && valid_in) begin
                 req_in.paddr <= read_paddr;
                 req_in.cycle_counter <= cycle_counter;
                 req_in.col <= col_in;
