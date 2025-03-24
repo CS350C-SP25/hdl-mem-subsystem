@@ -239,7 +239,7 @@ module cache #(
     hc_ready_out = 0;
     lc_ready_comb = 0;
     lc_ready_out = 0;
-    lc_addr_out = 0;
+    // lc_addr_out = 0;
     changed_way = hit_way_reg;
     cache_temp = cache_data;
     cur_dirty = 0;
@@ -250,6 +250,7 @@ module cache #(
     lc_value_out_comb = 0;
     lc_addr_out_comb = 0;
     evict_data = evict_data_reg;
+    hc_addr_out_comb = '0;
 
     plru_temp = plru_state;
 
@@ -298,7 +299,7 @@ module cache #(
 
       SEND_LOWER_CACHE_REQ: begin
         lc_valid_comb = 1;  // set out to one, we are sending request
-        lc_addr_out   = {hc_tag, hc_set, {BLOCK_OFFSET_BITS{1'b0}}};
+        lc_addr_out_comb = {hc_tag, hc_set, {BLOCK_OFFSET_BITS{1'b0}}};
         if (~lc_ready_reg) begin
           // not ready, we'll stay in this state until it is
           next_state = cur_state;
@@ -359,6 +360,7 @@ module cache #(
 
         hc_value_out_comb = cache_data[changed_way][cur_set][cur_offset*8+:64];
         hc_valid_comb = 1;
+        hc_addr_out_comb = {cur_tag, cur_set, cur_offset};
         next_state = hc_ready_reg ? IDLE : RESPOND_HC;
       end
 
@@ -394,7 +396,7 @@ module cache #(
       lc_ready_reg <= lc_ready_in;
       hc_ready_reg <= hc_ready_in;
 
-      if (next_state == IDLE) begin
+      if (cur_state == IDLE) begin
         flush_reg    <= flush_in;
         hc_valid_reg <= hc_valid_in;
         hc_addr_reg  <= hc_addr_in;
@@ -417,6 +419,10 @@ module cache #(
       plru_state <= plru_temp;
       we_out <= we_out_comb;
       evict_data_reg <= evict_data;
+      lc_valid_out <= lc_valid_comb;
+      hc_valid_out <= hc_valid_comb;
+      lc_addr_out <= lc_addr_out_comb;
+      hc_addr_out <= hc_addr_out_comb;
     end
   end
 
@@ -429,8 +435,8 @@ module cache #(
     // hc_ready_out <= hc_ready_comb;
     // lc_ready_out <= lc_ready_comb;
     hc_value_out <= hc_value_out_comb;
-    hc_valid_out <= hc_valid_comb;
-    lc_valid_out <= lc_valid_comb;
+    // hc_valid_out <= hc_valid_comb;
+    // lc_valid_out <= lc_valid_comb;
     hit_reg <= cur_hit;
     hit_way_reg <= changed_way;
 
