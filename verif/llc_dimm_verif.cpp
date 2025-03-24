@@ -60,7 +60,7 @@ class TestBench {
     void openTrace(const char* filename) {
         if (!m_trace) {
             m_trace = new VerilatedVcdC;
-            m_dut->trace(m_trace, 99);
+            m_dut->trace(m_trace, 1000);
             m_trace->open(filename);
         }
     }
@@ -180,12 +180,9 @@ class TestBench {
         if (m_pendingTransactions.empty()) {
             return;
         }
-        m_dut->hc_valid_in = 1;
-        tick();
         // Check if LLC is ready to accept new transaction
         // std::cout << "0x" << std::hex << m_dut->hc_ready_out << "\n";
-        if (m_dut->hc_ready_out) {
-            // Get the next pending transaction
+        // Get the next pending transaction
             auto& txn = m_pendingTransactions.front();
 
             m_dut->cs_in = 1;
@@ -197,6 +194,7 @@ class TestBench {
                     m_dut->hc_addr_in = txn.addr;
                     m_dut->hc_we_in = 0;
                     m_dut->hc_cl_in = 0;
+                    m_dut->hc_valid_in = 1;
                     break;
 
                 case WRITE:
@@ -206,6 +204,7 @@ class TestBench {
                     m_dut->hc_value_in = txn.value;
                     m_dut->hc_we_in = 1;
                     m_dut->hc_cl_in = 0;
+                    m_dut->hc_valid_in = 1;
                     break;
 
                 case CACHE_LINE_FILL:
@@ -224,18 +223,23 @@ class TestBench {
                     }
                     m_dut->hc_we_in = 1;
                     m_dut->hc_cl_in = 1;
+                    m_dut->hc_valid_in = 1;
                     break;
 
                 case FLUSH:
                     std::cout << "Flushing \n";
                     m_dut->flush_in = 1;
+                    m_dut->hc_valid_in = 1;
                     break;
             }
+            tick();
             m_dut->hc_valid_in = 0;
 
             // Remove from pending transactions
-            m_pendingTransactions.erase(m_pendingTransactions.begin());
-        }
+            if (m_dut->hc_ready_out) {
+                m_pendingTransactions.erase(m_pendingTransactions.begin());
+            }
+        
     }
 
     // Check outputs and mark transactions as complete
