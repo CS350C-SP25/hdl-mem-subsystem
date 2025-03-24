@@ -6,3 +6,4 @@ db
 /db
 db/prev_cmp_mem_subsystem_tb.qmsg
 l1d.sh
+.DS_Store
