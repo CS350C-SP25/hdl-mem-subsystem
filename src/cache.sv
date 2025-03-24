@@ -1,3 +1,4 @@
+`timescale 1ps / 1ps
 // A generic cache. It must consider:
 // - returning data on a hit (to higher-level cache)
 // - requesting data on a miss (to lower-level cache)
@@ -396,7 +397,7 @@ module cache #(
       lc_ready_reg <= lc_ready_in;
       hc_ready_reg <= hc_ready_in;
 
-      if (cur_state == IDLE) begin
+      if (next_state == IDLE) begin
         flush_reg    <= flush_in;
         hc_valid_reg <= hc_valid_in;
         hc_addr_reg  <= hc_addr_in;
@@ -423,6 +424,7 @@ module cache #(
       hc_valid_out <= hc_valid_comb;
       lc_addr_out <= lc_addr_out_comb;
       hc_addr_out <= hc_addr_out_comb;
+      hc_value_out <= hc_value_out_comb;
     end
   end
 
@@ -434,7 +436,6 @@ module cache #(
     tag_array <= tag_temp;
     // hc_ready_out <= hc_ready_comb;
     // lc_ready_out <= lc_ready_comb;
-    hc_value_out <= hc_value_out_comb;
     // hc_valid_out <= hc_valid_comb;
     // lc_valid_out <= lc_valid_comb;
     hit_reg <= cur_hit;
