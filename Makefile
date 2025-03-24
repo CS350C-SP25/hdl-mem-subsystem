@@ -26,7 +26,7 @@ SCHEDULER_VFLAGS = $(VFLAGS) --top-module mem_scheduler_tb
 LLC_VFLAGS = $(VFLAGS) --top-module last_level_cache
 SDRAM_VFLAGS = $(VFLAGS) --top-module ddr4_system_tb
 CACHE_VFLAGS = $(VFLAGS) --top-module cache
-L1D_VFLAGS = $(VFLAGS) --top-module l1_data_cache
+L1D_VFLAGS = $(VFLAGS) --top-module l1_data_cache_tb
 SD_CTRL_DIMM_VFLAGS = $(VFLAGS) --top-module llc_dimm_tb
 
 # Source files
@@ -35,7 +35,7 @@ SCHEDULER_SRCS = --cc src/mem_control/bank_state.sv src/mem_control/comb_util.sv
 LLC_SRCS = --cc src/last_level_cache.sv src/mem_control/bank_state.sv src/mem_control/comb_util.sv src/mem_control/mem_scheduler.sv src/mem_control/req_queue src/cache.sv
 SDRAM_SRCS = --cc tb/ddr4_system_tb.sv src/mem_control/sdram_controller.sv src/ddr4_dimm.sv src/mem_control/bank_state.sv src/mem_control/comb_util.sv --exe verif/ddr4_sys_verif.cpp
 CACHE_SRCS = --cc --timing src/cache.sv src/testbenches/cache_tb.sv
-L1D_SRCS = --cc --timing src/l1_data_cache.sv src/mem_control/comb_util.sv # still adding more
+L1D_SRCS = --cc --timing src/l1_data_cache.sv tb/l1d_tb.sv src/mem_control/comb_util.sv # still adding more
 SD_CTRL_DIMM_SRCS = --cc --timing tb/llc_dimm_tb.sv src/cache.sv src/last_level_cache.sv src/ddr4_dimm.sv src/mem_control/bank_state.sv src/mem_control/comb_util.sv src/mem_control/mem_scheduler.sv src/mem_control/req_queue.sv src/mem_control/sdram_controller.sv --exe verif/llc_dimm_verif.cpp
 
 # Output binaries
@@ -44,13 +44,14 @@ SCHEDULER_BIN = obj_dir/Vmem_scheduler
 LLC_BIN = obj_dir/Vlast_level_cache
 SDRAM_BIN = obj_dir/Vddr4_system_tb
 CACHE_BIN = obj_dir/cache
-L1D_BIN = obj_dir/Vl1_data_cache
+L1D_BIN = obj_dir/Vl1_data_cache_tb
 SD_CTRL_DIMM_BIN = obj_dir/Vllc_dimm_tb
 
 # Default target (alias for dimm)
 all: dimm
 
 # Compile and run for DIMM
+
 dimm: $(DIMM_BIN)
 	./$(DIMM_BIN)
 
@@ -67,7 +68,8 @@ sdram: $(SDRAM_BIN)
 cache: $(CACHE_BIN)
 	./$(CACHE_BIN)
 
-l1d: ${L1D_BIN}
+l1d: clean ${L1D_BIN}
+	clear
 	./${L1D_BIN}
 
 # Compile and run for System Controller and DIMM testbench

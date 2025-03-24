@@ -55,18 +55,21 @@ module l1_data_cache #(
 
   localparam PADDR_SIZE = PADDR_BITS;
   typedef struct packed {
-    logic valid;
-    logic [PADDR_SIZE-1:0] paddr;
-    logic we;
-    logic [63:0] data;
-    logic [TAG_BITS-1:0] tag;
+    logic [PADDR_SIZE-1:0] paddr;  // address
+    logic                  we;     // write enable
+    logic [63:0]           data;   // if writing data, the store value
+    logic [TAG_BITS-1:0]   tag;    // processor tag, not memory addr tag
   } mshr_entry_t;
 
-  mshr_entry_t mshr_entries[MSHR_COUNT-1:0];
+  mshr_entry_t                  mshr_entries [MSHR_COUNT-1:0];
 
   // Add enqueue and dequeue signals for each MSHR queue
-  logic [MSHR_COUNT-1:0] mshr_enqueue;
-  logic [MSHR_COUNT-1:0] mshr_dequeue;
+  logic        [MSHR_COUNT-1:0] mshr_enqueue;
+  logic        [MSHR_COUNT-1:0] mshr_dequeue;
+  mshr_entry_t [MSHR_COUNT-1:0] mshr_outputs;
+  logic        [MSHR_COUNT-1:0] mshr_empty;
+  logic        [MSHR_COUNT-1:0] mshr_full;
+
 
 
   typedef enum logic [2:0] {
@@ -113,6 +116,10 @@ module l1_data_cache #(
   logic [63:0] lc_value_out_comb;
   logic lc_we_out_comb;
 
+  logic [PADDR_BITS-1:0] cur_addr;
+
+  assign cur_addr = lc_valid_in_reg ? lc_addr_in_reg : lsu_addr_in_reg[PADDR_BITS-1:0];
+
 
   always_comb begin : l1d_combinational_logic
     lsu_valid_out_comb = 1'b0;
@@ -128,6 +135,7 @@ module l1_data_cache #(
 
     case (cur_state)
       IDLE: begin
+        // Prefer reading from lc first -- prevents race conditions, data going to proc > priority
         if (lc_valid_in_reg) begin
           lc_ready_out_comb = 1;
         end else if (lsu_valid_in_reg) begin
@@ -140,13 +148,23 @@ module l1_data_cache #(
       end
 
       CHECK_MSHR: begin
+        // go through every MSHR and check if we already have one
+        logic found = 0;
+        for (int i = 0; i < MSHR_COUNT; i++) begin
+          if (mshr_entries[i].paddr == cur_addr) begin
+            found = 1;
+          end
+        end
 
+        $display("Found");
       end
 
       default: begin
 
       end
     endcase
+
+    $monitor("[%0t] Current state is $d", $time, cur_state);
   end
 
   always @(posedge clk_in) begin
@@ -196,9 +214,14 @@ module l1_data_cache #(
         lc_value_out_reg <= lc_value_out;
         lc_we_out_reg <= lc_we_out;
       end
+
+      lc_ready_out_reg <= lc_ready_out_comb;
+      lsu_ready_out_reg <= lc_ready_out_comb;
+      cur_state <= next_state;
     end
   end
 
+  /* MSHR QUEUES */
   genvar i;
   generate
     for (i = 0; i < MSHR_COUNT; i++) begin : mshr_queues
@@ -212,9 +235,9 @@ module l1_data_cache #(
           .dequeue_in(mshr_dequeue[i]),
           .req_in(mshr_entries[i]),
           .cycle_count(32'd0),  // dummy input, needs to be connected properly
-          .req_out(),  // dummy output, needs to be connected properly
-          .empty(),  // dummy output, needs to be connected properly
-          .full()  // dummy output, needs to be connected properly
+          .req_out(mshr_outputs[i]),  // dummy output, needs to be connected properly
+          .empty(mshr_empty[i]),  // dummy output, needs to be connected properly
+          .full(mshr_full[i])  // dummy output, needs to be connected properly
       );
     end
   endgenerate
@@ -229,8 +252,6 @@ module l1_data_cache #(
   assign lc_addr_out = lc_addr_out_reg;
   assign lc_value_out = lc_value_out_reg;
   assign lc_we_out = lc_we_out_reg;
-
-
 
 
 endmodule : l1_data_cache
