@@ -73,7 +73,7 @@ l1d: clean ${L1D_BIN}
 	./${L1D_BIN}
 
 # Compile and run for System Controller and DIMM testbench
-sd_ctrl_dimm: $(SD_CTRL_DIMM_BIN)
+sd_ctrl_dimm: clean $(SD_CTRL_DIMM_BIN)
 	./$(SD_CTRL_DIMM_BIN)
 
 # Compile with Verilator
