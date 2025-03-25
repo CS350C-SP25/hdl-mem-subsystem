@@ -266,7 +266,6 @@ module cache #(
           hc_ready_out  = 1;
         end
       end
-
       LOOKUP: begin
         for (int i = 0; i < A; i++) begin
           if (tag_array[i][cur_set].tag == cur_tag && tag_array[i][cur_set].valid) begin
@@ -279,10 +278,6 @@ module cache #(
           changed_way = get_victim_way(plru_state[cur_set]);
           plru_temp[cur_set] = update_plru(plru_state[cur_set], changed_way);
           next_state = tag_array[changed_way][cur_set].dirty ? EVICT_BLOCK : WRITE_CACHE;
-          $display("[CACHE] considering dirty %b for set 0x%x", tag_array[changed_way][cur_set].dirty, cur_set);
-          if (tag_array[changed_way][cur_set].dirty) begin
-            $display("[%0t] we evicted 🌾 at %x", $time, hc_addr_in);
-          end
         end else if (cur_hit) begin
           changed_way = get_victim_way(plru_state[cur_set]);
 
@@ -295,7 +290,6 @@ module cache #(
             next_state = RESPOND_HC;
           end
         end else begin
-          $display("[%0t] we missed 🥀 at %x, set 0x%x", $time, hc_addr_in, cur_set);
           changed_way = get_victim_way(plru_state[cur_set]);
           next_state  = SEND_LOWER_CACHE_REQ;
         end
@@ -335,7 +329,7 @@ module cache #(
           tag_array[hit_way_reg][cur_set].tag, cur_set, {BLOCK_OFFSET_BITS{1'b0}}
         };
 
-        $display("evicting in the cahce module\n");
+        // $display("evicting in the cahce module\n");
         evict_data = cache_data[hit_way_reg][cur_set];
         next_state = EVICT_WAIT;
       end
@@ -371,7 +365,7 @@ module cache #(
       default: next_state = IDLE;
     endcase
 
-    $monitor("[%0t] Cache data in 0x%h, Line in reg: 0x%h", $time, lc_value_reg, cache_line_in_reg);
+    $monitor("[CACHE] Cache data in 0x%h, Line in reg: 0x%h", lc_value_reg, cache_line_in_reg);
   end : generic_cache_combinational
 
 
@@ -430,6 +424,20 @@ module cache #(
       lc_addr_out <= lc_addr_out_comb;
       hc_addr_out <= hc_addr_out_comb;
       hc_value_out <= hc_value_out_comb;
+
+      // DEBUG STATEMENTS
+      if (cur_state == LOOKUP) begin
+        if (lc_valid_reg || cl_in_reg) begin
+          $display("[CACHE] considering dirty %b for set 0x%x", tag_array[changed_way][cur_set].dirty, cur_set);
+          if (tag_array[changed_way][cur_set].dirty) begin
+            $display("[CACHE] we evicted 🌾 at %x", hc_addr_in);
+          end
+        end else if (!cur_hit) begin
+          $display("[CACHE] we missed 🥀 at %x, set 0x%x", hc_addr_in, cur_set);
+        end
+      end else if (cur_state == RESPOND_HC) begin
+        $display("[CACHE] Read value %x for addr %x, returning to higher cache", cache_data[changed_way][cur_set][cur_offset*8+:64], {cur_tag, cur_set, cur_offset});
+      end
     end
   end
 
