@@ -371,9 +371,14 @@ class TestBench {
                 driveInputs();
 
                 // Run simulation for a few cycles
-                for (int j = 0; j < 100; j++) {
+                for (int k = 0; k < 100; k++) {
                     tick();
                 }
+            }
+            read(set_addr);
+            driveInputs();
+            for (int k = 0; k < 100; k++) {
+                tick();
             }
         }
     }

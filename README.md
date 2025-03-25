@@ -7,10 +7,35 @@ DIMM, SDRAM Controller, L1D Cache, to L/S Unit.
 ## DIMM
 
 This implementation uses the DDR4 standard. For simplicity, we do not consider rank of chips on the DIMM. 
+ - testing DIMM can be done using the verification testbench provided at `verif/dimm_tb2.cpp`
+ - the testbench can be built using `make dimm` \[TODO: verify this]
 
-## SDRAM Controller
+## Cache Hiearchy
+The cache hierarchy only consists of l1d and llc. L1 data cache and last level cache encapsulate a basic cache module.
 
-The SDRAM controller roughly implements the FR-FCFS paper. [Rixner 2004]
+### Basic Cache Module
+The cache is non-blocking. Only the L1D includes MSHRs. To keep design simple, lower caches take in entire cache lines when higher caches evict. 
+ - the cache module can be verified using the testbench provided at `tb/cache_tb.sv`
+ - the testbench can be built using `make cache`
+
+### Last Level Cache
+
+The last level cache encapsulates a cache and a memory controller that roughly implements the FR-FCFS paper. [Rixner 2004] We ended up removing the SDRAM controller anyways and just including the memory controller in LLC for simplicity. 
+
+ - testing DIMM and SDRAM Controller integration can be done using the module `tb/llc_dimm_tb.sv`. (it's not actually a testbench, just a wrapper module)
+ - a comprehensive verification testbench is provided at `verif/llc_dimm_verif.cpp`
+ - the testbench can be built using `make llc_dimm`
+
+### L1D Cache
+TODO write this section. 
+ - the l1d testbench can be built using `make l1d`
+
+ ## Load/Store Unit
+ TODO write this section.
+  - the lsu ain't even got a testbench pushed 🥀😩
+
+ ## Extra Credit Features for Grading
+ Currently working to integrate all the modules. The DIMM and LLC have been fully integrated. LLC and L1D should work together integrated if you connect the right signals. Karmanyaah is working on converting all modules to be synthesized on Quartus. 
 
 ## ACA DMEM Assignment ideology
 
