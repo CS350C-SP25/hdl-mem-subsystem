@@ -33,6 +33,7 @@ TODO write this section.
  ## Load/Store Unit
  TODO write this section.
   - the lsu ain't even got a testbench pushed 🥀😩
+  - yes it does
 
  ## Extra Credit Features for Grading
  Currently working to integrate all the modules. The DIMM and LLC have been fully integrated. LLC and L1D should work together integrated if you connect the right signals. Karmanyaah is working on converting all modules to be synthesized on Quartus. 
