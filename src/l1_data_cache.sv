@@ -27,6 +27,7 @@ module l1_data_cache #(
     parameter int MSHR_COUNT = 4,
     parameter int TAG_BITS = 10
 ) (
+    // Inputs from LSU
     input logic clk_in,
     input logic rst_N_in,
     input logic cs_N_in,
@@ -37,15 +38,18 @@ module l1_data_cache #(
     input logic [63:0] lsu_value_in,
     input logic [TAG_BITS-1:0] lsu_tag_in,
     input logic lsu_we_in,
+    // signals that go to LSU
     output logic lsu_valid_out,
     output logic lsu_ready_out,
     output logic [63:0] lsu_addr_out,
     output logic [63:0] lsu_value_out,
     output logic lsu_write_complete_out,
+    // Inputs from LLC
     input logic lc_ready_in,
     input logic lc_valid_in,
     input logic [PADDR_BITS-1:0] lc_addr_in,
     input logic [8*B-1:0] lc_value_in,
+    // signals that go to LLC
     output logic lc_valid_out,
     output logic lc_ready_out,
     output logic [PADDR_BITS-1:0] lc_addr_out,

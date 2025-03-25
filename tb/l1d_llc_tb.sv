@@ -1,29 +1,3 @@
-/* missing pins:
-
-lc_we_out
-hc_cl_in
-hc_value_out
-mem_bus_ready_in
-mem_bus_valid_in
-mem_bus_value_io
-mem_bus_addr_out
-mem_bus_ready_out
-mem_bus_valid_out
-l1d_lc_valid_out
-l1d_lc_ready_out
-l1d_lc_addr_out
-l1d_lc_value_out
-llc_hc_valid_out
-llc_hc_ready_out
-llc_hc_addr_out
-llc_hc_line_out
-hc_line_out
-
-
-
-*/
-
-
 // tb meant to ensure connection between caches work
 module l1d_llc_tb #(
     parameter int A = 8,
@@ -56,37 +30,36 @@ module l1d_llc_tb #(
 );
 
     // Internal signals for L1D->LLC communication
-    logic l1d_lc_valid, l1d_lc_ready;
-    logic [PADDR_BITS-1:0] lc_addr_out;
-    logic [8*B-1:0] lc_value_out;
-    logic lc_we;
-
-    logic l1d_lc_valid_out;
+    logic [PADDR_BITS-1:0] l1d_lc_addr_out;
+    logic [8*B-1:0] l1d_lc_value_out;
     logic l1d_lc_ready_out;
-    logic l1d_lc_addr_out;
-    
-    logic l1d_lc_line_out;
-    logic [8*B-1:0] lc_value_out;
+    logic l1d_lc_valid_out;
+    logic l1d_lc_we_out;
 
+    logic [63:0] l1d_hc_value_in; // Unused
+    logic [511:0] l1d_hc_value_out; // Unused
+    // Standins for the previous 2 unused signals
+    logic [63:0] temp_64;
+    logic [511:0] temp_512;
+    assign temp_64 = '0;
+    assign temp_512 = '0;
 
     // Internal signals for LLC->L1D communication
-    logic lc_l1d_valid, lc_l1d_ready;
-    logic [PADDR_BITS-1:0] lc_addr_in;
-    logic [8*B-1:0] lc_value_in;
-
     logic llc_hc_valid_out;
     logic llc_hc_ready_out;
-    logic llc_hc_addr_out;
+    logic [PADDR_BITS-1:0] llc_hc_addr_out;
+    logic [63:0] llc_hc_value_out;
 
-    
+    // Other signals for llc (for DIMM)
+    logic [W-1:0] llc_mem_bus_value_io;
+    logic [PADDR_BITS-1:0] llc_mem_bus_addr_out;
+    logic llc_mem_bus_ready_out;
+    logic llc_mem_bus_valid_out;
 
-    // Unused signals
-    logic lc_we_out;
-    logic [W-1:0] mem_bus_value_io;
-    logic mem_bus_addr_out;
-    logic mem_bus_ready_out;
-    logic mem_bus_valid_out;
-
+    // TODO: this is for indicating a cache line write to the LLC, but where is it meant to be coming from?
+    // naming seems to indicate it should be coming from higher cache (l1d), but l1d has no lc_cl_out
+    logic llc_hc_cl_in;
+    assign llc_hc_cl_in = '0;
     
     // Test control
     bit test_done;
@@ -103,7 +76,7 @@ module l1d_llc_tb #(
     ) l1d (
         .clk_in(clk),
         .rst_N_in(rst_N),
-        .cs_N_in(l1d_cs_N_in),
+        .cs_N_in('0), // chip select is active low
         .flush_in(l1d_flush_in),
         .lsu_valid_in(l1d_lsu_valid_in),
         .lsu_ready_in(l1d_lsu_ready_in),
@@ -116,15 +89,15 @@ module l1d_llc_tb #(
         .lsu_addr_out(l1d_lsu_addr_out),
         .lsu_value_out(l1d_lsu_value_out),
         .lsu_write_complete_out(l1d_lsu_write_complete_out),
-        .lc_ready_in(l1d_lc_ready),
-        .lc_valid_in(l1d_lc_valid),
-        .lc_addr_in(lc_addr_out),
-        .lc_value_in(lc_value_out),
-        .lc_valid_out(lc_l1d_valid),
-        .lc_ready_out(lc_l1d_ready),
-        .lc_addr_out(lc_addr_in),
-        .lc_value_out(lc_value_in),
-        .lc_we_out(lc_we_out)
+        .lc_ready_in(llc_hc_ready_out),
+        .lc_valid_in(llc_hc_valid_out),
+        .lc_addr_in(llc_hc_addr_out),
+        .lc_value_in(temp_512), // TODO: Replace with llc_hc_value_out later, default value for now
+        .lc_valid_out(l1d_lc_valid_out),
+        .lc_ready_out(l1d_lc_ready_out),
+        .lc_addr_out(l1d_lc_addr_out),
+        .lc_value_out(l1d_lc_value_out),
+        .lc_we_out(l1d_lc_we_out)
     );
 
     last_level_cache #(
@@ -144,17 +117,25 @@ module l1d_llc_tb #(
     ) llc (
         .clk_in(clk),
         .rst_N_in(rst_N),
-        .cs_in(1'b1),  // LLC is always enabled in this testbench
-        .flush_in(1'b0),  // Flush controlled by testbench
+        .cs_in('0),  // active low. keep enabled for testbench
+        .flush_in(l1d_flush_in),  // TODO: This flush is meant for l1d. Should l1d output a flush? or just use the l1d one for llc
         .hc_valid_in(l1d_lc_valid_out),
         .hc_ready_in(l1d_lc_ready_out),
         .hc_addr_in(l1d_lc_addr_out),
-        .hc_value_in(l1d_lc_value_out),
-        .hc_we_in(1'b0),  // Write enable controlled by testbench
-        .hc_line_in(l1d_lc_value_out),
-        .hc_valid_out(llc_hc_valid_out),
+        .hc_value_in(temp_64), // Filler falue for unused pin
+        .hc_we_in(l1d_lc_we_out),
+        .hc_line_in(l1d_lc_value_out), // TODO: difference between value_in and line_in?
+        .hc_cl_in(llc_hc_cl_in), // TODO: unsure where this is meant to be coming from. default value set above
         .hc_ready_out(llc_hc_ready_out),
-        .hc_addr_out(llc_hc_addr_out)
+        .hc_valid_out(llc_hc_valid_out),
+        .hc_addr_out(llc_hc_addr_out),
+        .hc_value_out(llc_hc_value_out),
+        .mem_bus_ready_in(l1d_lc_ready_out),
+        .mem_bus_valid_in(l1d_lc_valid_out),
+        .mem_bus_value_io(llc_mem_bus_value_io),
+        .mem_bus_addr_out(llc_mem_bus_addr_out),
+        .mem_bus_ready_out(llc_mem_bus_ready_out),
+        .mem_bus_valid_out(llc_mem_bus_valid_out)
     );
 
     // Monitor signals for debugging
