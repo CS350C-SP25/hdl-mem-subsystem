@@ -29,7 +29,7 @@ SDRAM_VFLAGS = $(VFLAGS) --top-module ddr4_system_tb
 CACHE_VFLAGS = $(VFLAGS) --top-module cache_tb
 L1D_VFLAGS = $(VFLAGS) --top-module l1_data_cache_tb
 LLC_DIMM_VFLAGS = $(VFLAGS) --top-module llc_dimm_tb
-L1D_LLC_DIMM_VFLAGS = $(VFLAGS) --top-module l1d_llc_tv
+L1D_LLC_DIMM_VFLAGS = $(VFLAGS) --top-module l1d_llc_tb
 
 # Source files
 DIMM_SRCS = --cc src/ddr4_dimm.sv --exe verif/dimm_tb2.cpp
