@@ -342,8 +342,8 @@ module cache #(
       // In the EVICT_WAIT state:
       EVICT_WAIT: begin
         if (lc_ready_reg) begin
-          // Eviction write accepted, cache is ready to do whatever now
-          next_state = IDLE;
+          // Eviction write accepted, cache needs to write the new data
+          next_state = WRITE_CACHE;
         end else begin
           next_state = EVICT_WAIT;
         end
