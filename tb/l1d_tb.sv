@@ -97,21 +97,21 @@ module l1_data_cache_tb;
   // Function for reset sequence
   function void reset_sequence();
     #10 rst_N_in = 1'b0;
-    $display("Reset complete");
+    $display("[%0t] Reset complete", $time);
     #20;
     rst_N_in = 1'b1;
   endfunction
 
   // Function to write to LSU
   function void write_to_lsu(input logic [63:0] addr, input logic [63:0] value);
-    $display("  Writing value %h to address %h via LSU", value, addr);
+    $display("[%0t]  Writing value %h to address %h via LSU", $time, value, addr);
     lsu_addr_in = addr;
     lsu_value_in = value;
     lsu_we_in = 1'b1;
     lsu_valid_in = 1'b1;
     wait (lsu_ready_out);
     lsu_valid_in = 1'b0;
-    $display("  Write complete acknowledged by LSU");
+    $display("[%0t]  Write complete acknowledged by LSU", $time);
   endfunction
 
   function void respond_from_lc(input logic [63:0] addr, input logic [511:0] value);
@@ -121,23 +121,33 @@ module l1_data_cache_tb;
     lc_addr_in  = addr[22-1:0];
     wait (lc_ready_out);
     lc_valid_in = 0;
-    $display("Sent LC response back");
+    $display("[%0t] Sent LC response back", $time);
   endfunction
 
   // Function to read from LSU
   function void read_from_lsu(input logic [63:0] addr);
-    $display("  Reading from address %h via LSU", addr);
+    $display("[%0t]  Reading from address %h via LSU", $time, addr);
     lsu_addr_in = addr;
     lsu_we_in = 1'b0;
     lsu_valid_in = 1'b1;
+    lsu_ready_in = 1;
     wait (lsu_ready_out);
     lsu_valid_in = 1'b0;
+    lsu_ready_in = 1'b1;
+  endfunction
+
+  // Function to read the write complete from L1D
+  function void complete_write_from_l1d();
+    $display("[%0t]  Completing write via LSU", $time);
+    lsu_ready_in = 1;
+    lsu_valid_in = 1'b0;
+    wait (lsu_valid_out);
+    lsu_ready_in = 0;
   endfunction
 
   // Function to check LSU read data
   function void check_lsu_read_data(input logic [63:0] expected_value, input string test_name);
-    @(posedge lsu_valid_out);
-    #1;
+    wait (lsu_valid_out);
     if (lsu_valid_out) begin
       $display("  LSU read valid out detected");
       if (lsu_value_out == expected_value) begin
@@ -200,8 +210,10 @@ module l1_data_cache_tb;
     $display("\n--- Starting Basic read hit test ---");
     write_to_lsu(64'h2000, 64'h12345678);
     respond_from_lc(64'h2000, 512'h0);
-    $display("WROTE\nNOW READING\n");
+    lsu_ready_in = 0;
+    complete_write_from_l1d();
     read_from_lsu(64'h2000);
+    $display("Got data from LSU");
     check_lsu_read_data(64'h12345678, "Basic read hit test");
   endtask
 

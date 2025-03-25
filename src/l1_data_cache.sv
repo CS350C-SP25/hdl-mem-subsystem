@@ -73,7 +73,7 @@ module l1_data_cache #(
   // Add enqueue and dequeue signals for each MSHR queue
   logic        [MSHR_COUNT-1:0] mshr_enqueue;
   logic        [MSHR_COUNT-1:0] mshr_dequeue;
-  mshr_entry_t [MSHR_COUNT-1:0] mshr_outputs;
+  mshr_entry_t                  mshr_outputs [MSHR_COUNT-1:0];
   logic        [MSHR_COUNT-1:0] mshr_empty;
   logic        [MSHR_COUNT-1:0] mshr_full;
 
@@ -192,6 +192,7 @@ module l1_data_cache #(
     for (int i = 0; i < MSHR_COUNT; i++) begin
       mshr_enqueue[i] = 1'b0;
       mshr_entries[i] = '0;
+      mshr_dequeue[i] = 1'b0;
     end
 
     found = 0;
@@ -231,10 +232,14 @@ module l1_data_cache #(
         if (lc_valid_in_reg) begin
           $display("WRITING FROM LC");
           cache_lc_valid_in_next = 1;
+          cache_lc_value_in_next = lc_value_in_reg;
+          cache_lc_addr_in_next  = lc_addr_in_reg;
 
         end else begin
           $display("WRITING FROM LSU");
           cache_hc_valid_next = 1;
+          cache_hc_value_next = lsu_value_in_reg;
+          cache_hc_addr_next  = cur_addr;
         end
 
         next_state = (cache_hc_ready_out_reg || cache_lc_ready_out_reg) ? WAIT_CACHE : cur_state;
@@ -266,11 +271,16 @@ module l1_data_cache #(
             next_state = EVICT;
           end
         end else if (cache_hc_valid_out_reg) begin
-          // HIT! We can move to sending data back to the top
+          // READ HIT! We can move to sending data back to the top
           cache_hc_ready_next = 1;  // complete transcation
           lsu_value_out_comb = cache_hc_value_out_reg;
           next_state = SEND_RESP_HC;
         end
+        // else begin
+        //   // was a write from HC but was completed without problem
+        //   lsu_write_complete_out_comb = 1;
+        //   next_state = IDLE;
+        // end
       end
 
 
@@ -300,6 +310,7 @@ module l1_data_cache #(
             mshr_entries[freePos].we = lsu_we_in_reg;
             mshr_entries[freePos].data = lsu_value_in_reg;
             mshr_entries[freePos].tag = lsu_tag_in_reg;
+            mshr_entries[freePos].no_offset_addr = no_offset_addr;
 
             mshr_enqueue[freePos] = 1;
             next_state = SEND_REQ_LC;
@@ -318,6 +329,7 @@ module l1_data_cache #(
               mshr_entries[pos].we = lsu_we_in_reg;
               mshr_entries[pos].data = lsu_value_in_reg;
               mshr_entries[pos].tag = lsu_tag_in_reg;
+              mshr_entries[pos].no_offset_addr = no_offset_addr;
 
               mshr_enqueue[pos] = 1;
 
@@ -342,6 +354,7 @@ module l1_data_cache #(
                 mshr_entries[pos].we = lsu_we_in_reg;
                 mshr_entries[pos].data = lsu_value_in_reg;
                 mshr_entries[pos].tag = lsu_tag_in_reg;
+                mshr_entries[pos].no_offset_addr = no_offset_addr;
 
                 mshr_enqueue[pos] = 1;
                 next_state = SEND_REQ_LC;
@@ -359,6 +372,8 @@ module l1_data_cache #(
       CLEAR_MSHR: begin
         // TODO: need to dequeu MSHR and complete frfom front to bacl;
         for (int i = MSHR_COUNT - 1; i >= 0; i--) begin
+          // $display("The addr was %h and %h", lc_addr_in_reg[PADDR_BITS-1:BLOCK_OFFSET_BITS],
+          //          mshr_outputs[i].no_offset_addr);
           if (mshr_outputs[i].no_offset_addr == lc_addr_in_reg[PADDR_BITS-1:BLOCK_OFFSET_BITS]) begin
             found = 1;
             pos   = i;
@@ -367,7 +382,7 @@ module l1_data_cache #(
 
 
         if (!mshr_empty[pos] && mshr_outputs[pos].valid) begin
-          mshr_enqueue[pos]  = 1;
+          mshr_dequeue[pos]  = 1;
           // run the request
           cache_hc_addr_next = mshr_outputs[pos].paddr;
           lsu_tag_out_comb   = mshr_outputs[pos].tag;
@@ -376,6 +391,7 @@ module l1_data_cache #(
             // this is a write 
             cache_hc_valid_next = 1;
             cache_hc_value_next = mshr_outputs[pos].data;
+            cache_hc_we_next = 1;
             next_state = WRITE_FROM_MSHR;
           end else begin
             // this is A READ
@@ -410,15 +426,18 @@ module l1_data_cache #(
         cache_hc_we_next = 1;
         // this should NEVER miss because the cache IS blcoking while unqueueing, everything SHOULD hit.
         if (cache_hc_ready_out_reg) begin
-          // it took the signal, we can go to the next state, which is returning a signal that write completed, and then cominb back to finish the queue.
+          // it took the signal, we can go to the next state, which is returning a signal that read completed, and then cominb back to finish the queue.
           next_state = COMPLETE_READ;
+          cache_hc_valid_next = 0;
         end
       end
 
       COMPLETE_READ: begin
-        lsu_valid_out_comb = 1;
+        lsu_valid_out_comb = cache_hc_valid_out_reg;
+        lsu_value_out_comb = cache_hc_value_out_reg;
+
         // basically, wait until the LSU accepts that our write was done
-        if (lsu_ready_in_reg) begin
+        if (lsu_ready_in_reg && cache_hc_valid_out_reg) begin
           // LSU was ready, we can just submit the data and exit
           next_state = CLEAR_MSHR;
         end
@@ -442,10 +461,22 @@ module l1_data_cache #(
         end
       end
 
+      SEND_RESP_HC: begin
+        lsu_valid_out_comb = 1;
+        lsu_addr_out_comb  = {42'b0, cache_hc_addr_out_reg};
+        lsu_value_out_comb = cache_hc_value_out_reg;
+        // lsu_tag_out = 
+        if (lsu_ready_in_reg) begin
+          next_state = IDLE;
+        end
+      end
+
       default: begin
         next_state = IDLE;
       end
     endcase
+
+    $monitor("[%0t][L1D] State was %d", $time, cur_state);
   end
 
   always_ff @(posedge clk_in) begin : l1_register_updates

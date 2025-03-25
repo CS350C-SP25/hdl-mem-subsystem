@@ -365,7 +365,7 @@ module cache #(
       default: next_state = IDLE;
     endcase
 
-    $monitor("[CACHE] Cache data in 0x%h, Line in reg: 0x%h", lc_value_reg, cache_line_in_reg);
+    // $monitor("[CACHE] Cache data in 0x%h, Line in reg: 0x%h", lc_value_reg, cache_line_in_reg);
   end : generic_cache_combinational
 
 
@@ -428,7 +428,8 @@ module cache #(
       // DEBUG STATEMENTS
       if (cur_state == LOOKUP) begin
         if (lc_valid_reg || cl_in_reg) begin
-          $display("[CACHE] considering dirty %b for set 0x%x", tag_array[changed_way][cur_set].dirty, cur_set);
+          $display("[CACHE] considering dirty %b for set 0x%x",
+                   tag_array[changed_way][cur_set].dirty, cur_set);
           if (tag_array[changed_way][cur_set].dirty) begin
             $display("[CACHE] we evicted 🌾 at %x", hc_addr_in);
           end
@@ -436,7 +437,9 @@ module cache #(
           $display("[CACHE] we missed 🥀 at %x, set 0x%x", hc_addr_in, cur_set);
         end
       end else if (cur_state == RESPOND_HC) begin
-        $display("[CACHE] Read value %x for addr %x, returning to higher cache", cache_data[changed_way][cur_set][cur_offset*8+:64], {cur_tag, cur_set, cur_offset});
+        $display("[CACHE] Read value %x for addr %x, returning to higher cache",
+                 cache_data[changed_way][cur_set][cur_offset*8+:64], {cur_tag, cur_set, cur_offset
+                 });
       end
     end
   end
