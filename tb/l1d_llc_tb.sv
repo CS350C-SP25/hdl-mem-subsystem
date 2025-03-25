@@ -1,5 +1,38 @@
+/* missing pins:
+
+lc_we_out
+hc_cl_in
+hc_value_out
+mem_bus_ready_in
+mem_bus_valid_in
+mem_bus_value_io
+mem_bus_addr_out
+mem_bus_ready_out
+mem_bus_valid_out
+l1d_lc_valid_out
+l1d_lc_ready_out
+l1d_lc_addr_out
+l1d_lc_value_out
+llc_hc_valid_out
+llc_hc_ready_out
+llc_hc_addr_out
+llc_hc_line_out
+hc_line_out
+
+
+
+*/
+
+
 // tb meant to ensure connection between caches work
-module l1d_llc_tb (
+module l1d_llc_tb #(
+    parameter int A = 8,
+    parameter int B = 64,
+    parameter int C = 16384,
+    parameter int PADDR_BITS = 19, 
+    parameter int W = 64
+) (
+
     // Input signals
     input logic clk,
     input logic rst_N,
@@ -28,11 +61,32 @@ module l1d_llc_tb (
     logic [8*B-1:0] lc_value_out;
     logic lc_we;
 
+    logic l1d_lc_valid_out;
+    logic l1d_lc_ready_out;
+    logic l1d_lc_addr_out;
+    
+    logic l1d_lc_line_out;
+    logic [8*B-1:0] lc_value_out;
+
 
     // Internal signals for LLC->L1D communication
     logic lc_l1d_valid, lc_l1d_ready;
     logic [PADDR_BITS-1:0] lc_addr_in;
     logic [8*B-1:0] lc_value_in;
+
+    logic llc_hc_valid_out;
+    logic llc_hc_ready_out;
+    logic llc_hc_addr_out;
+
+    
+
+    // Unused signals
+    logic lc_we_out;
+    logic [W-1:0] mem_bus_value_io;
+    logic mem_bus_addr_out;
+    logic mem_bus_ready_out;
+    logic mem_bus_valid_out;
+
     
     // Test control
     bit test_done;
@@ -69,7 +123,8 @@ module l1d_llc_tb (
         .lc_valid_out(lc_l1d_valid),
         .lc_ready_out(lc_l1d_ready),
         .lc_addr_out(lc_addr_in),
-        .lc_value_out(lc_value_in)
+        .lc_value_out(lc_value_in),
+        .lc_we_out(lc_we_out)
     );
 
     last_level_cache #(
@@ -99,8 +154,7 @@ module l1d_llc_tb (
         .hc_line_in(l1d_lc_value_out),
         .hc_valid_out(llc_hc_valid_out),
         .hc_ready_out(llc_hc_ready_out),
-        .hc_addr_out(llc_hc_addr_out),
-        .hc_line_out(llc_hc_line_out)
+        .hc_addr_out(llc_hc_addr_out)
     );
 
     // Monitor signals for debugging

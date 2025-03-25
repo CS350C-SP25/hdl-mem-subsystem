@@ -45,7 +45,7 @@ module llc_dimm_tb (
     
     // DUT instances
     last_level_cache #(
-        .A(8),
+        .A(2),
         .B(64),
         .C(16384),
         .PADDR_BITS(19),
