@@ -120,6 +120,7 @@ module request_scheduler #(
         output logic [PADDR_BITS-1:0] addr_out_t
     );
         valid_out_t = 1'b0;
+        done = 1'b0;
         for (int i = 0; i < BANKS; i++) begin
             if (!params_out[i].ready_empty_out && 
                 !bank_state_params_out.blocked[i[$clog2(BANKS)-1:0]] && 
@@ -141,6 +142,7 @@ module request_scheduler #(
                     val_out_t = top.val_in;
                     addr_out_t = {1'b0, 1'b1, 1'b1, 1'b0, 1'b0, bank_group_out_t, bank_out_t, {(14-LOWER_ADDR_BITS_C){1'b0}}, col_out_t};
                 end else if (p == 2) begin // activate command
+                    $display("activating bank %x", i);
                     addr_out_t = {1'b0, 1'b0, 3'b0, bank_group_out_t, bank_out_t, {(14-LOWER_ADDR_BITS_R){1'b0}}, row_out_t};
                     bank_state_params_in.activate = '0;
                     bank_state_params_in.activate[i] = 1'b1;
@@ -332,7 +334,11 @@ module request_scheduler #(
             addr_out <= {PADDR_BITS{1'b1}};
         end else begin
             cycle_counter <= cycle_counter + 1;
-            addr_out <= addr_out_t;
+            if (!valid_out_t) begin
+                addr_out <= {PADDR_BITS{1'b1}};
+            end else begin
+                addr_out <= addr_out_t;
+            end
             bank_group_out <= bank_group_out_t;
             bank_out <= bank_out_t;
             row_out <= row_out_t;
@@ -444,6 +450,7 @@ module request_scheduler #(
                         addr_out_t
                     );
                     last_read_t = cycle_counter;
+                    $display("deq read");
                 end
             end else if (!bursting && last_write + 4 <= cycle_counter) begin
                 process_bank_commands(
@@ -464,6 +471,9 @@ module request_scheduler #(
                     addr_out_t
                 );
                 last_write_t = done ? cycle_counter : last_write;
+                if (done) begin
+                    $display("deq write");
+                end
                 if (!done) begin
                     process_bank_commands(
                         2,
@@ -482,6 +492,9 @@ module request_scheduler #(
                         bank_group_out_t,
                         addr_out_t
                     );
+                    if (done) begin
+                        $display("deq act");
+                    end
                 end
                 if (!done) begin
                     process_bank_commands(
@@ -501,9 +514,11 @@ module request_scheduler #(
                         bank_group_out_t,
                         addr_out_t
                     );
+                    if (done) begin
+                        $display("deq pre");
+                    end
                 end
             end
         end
     end
-
 endmodule: request_scheduler
