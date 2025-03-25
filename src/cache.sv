@@ -275,10 +275,11 @@ module cache #(
           end
         end
 
-        if (lc_valid_reg) begin
+        if (lc_valid_reg || cl_in_reg) begin
           changed_way = get_victim_way(plru_state[cur_set]);
           plru_temp[cur_set] = update_plru(plru_state[cur_set], changed_way);
           next_state = tag_array[changed_way][cur_set].dirty ? EVICT_BLOCK : WRITE_CACHE;
+          $display("[CACHE] considering dirty %b for set 0x%x", tag_array[changed_way][cur_set].dirty, cur_set);
           if (tag_array[changed_way][cur_set].dirty) begin
             $display("[%0t] we evicted 🌾 at %x", $time, hc_addr_in);
           end
@@ -294,7 +295,7 @@ module cache #(
             next_state = RESPOND_HC;
           end
         end else begin
-          $display("[%0t] we missed 🥀 at %x", $time, hc_addr_in);
+          $display("[%0t] we missed 🥀 at %x, set 0x%x", $time, hc_addr_in, cur_set);
           changed_way = get_victim_way(plru_state[cur_set]);
           next_state  = SEND_LOWER_CACHE_REQ;
         end
@@ -322,7 +323,7 @@ module cache #(
 
         tag_temp[hit_way_reg][cur_set].valid = 1;
         tag_temp[hit_way_reg][cur_set].tag = cur_tag;
-        tag_temp[hit_way_reg][cur_set].dirty = (lc_valid_reg || cl_in_reg) ? 0 : 1; // only dirty if its a write from hc, not lc
+        tag_temp[hit_way_reg][cur_set].dirty = (lc_valid_reg) ? 0 : 1; // only dirty if its a write from hc, not lc
 
         next_state = IDLE;
       end
@@ -333,7 +334,7 @@ module cache #(
         lc_addr_out_comb = {
           tag_array[hit_way_reg][cur_set].tag, cur_set, {BLOCK_OFFSET_BITS{1'b0}}
         };
-        
+
         $display("evicting in the cahce module\n");
         evict_data = cache_data[hit_way_reg][cur_set];
         next_state = EVICT_WAIT;
@@ -342,8 +343,8 @@ module cache #(
       // In the EVICT_WAIT state:
       EVICT_WAIT: begin
         if (lc_ready_reg) begin
-          // Eviction write accepted, cache is ready to do whatever now
-          next_state = IDLE;
+          // Eviction write accepted, cache needs to write the new data
+          next_state = WRITE_CACHE;
         end else begin
           next_state = EVICT_WAIT;
         end
@@ -369,6 +370,8 @@ module cache #(
 
       default: next_state = IDLE;
     endcase
+
+    $monitor("[%0t] Cache data in 0x%h, Line in reg: 0x%h", $time, lc_value_reg, cache_line_in_reg);
   end : generic_cache_combinational
 
 

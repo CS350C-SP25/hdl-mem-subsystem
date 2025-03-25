@@ -71,11 +71,14 @@ class TestBench {
         eval();
         if (m_trace) m_trace->dump(10 * m_tickCount + 5);
 
+        // std::cout << "pre tick" <<std::endl;
         m_dut->clk = 1;
         eval();
         if (m_trace) m_trace->dump(10 * m_tickCount + 10);
 
         m_tickCount++;
+        // std::cout << "post tick" <<std::endl;
+
     }
 
     void reset() {
@@ -150,7 +153,7 @@ class TestBench {
         // Update our memory model for the entire cache line (8 words)
         uint32_t aligned_addr = addr & ~0x3FULL;  // Align to 64-byte cache line
         for (int i = 0; i < 16; i++) {
-            m_memoryModel[aligned_addr + i * 16] = aligned_addr;
+            m_memoryModel[aligned_addr + i * 4] = aligned_addr;
         }
 
         m_pendingTransactions.push_back(txn);
@@ -220,7 +223,7 @@ class TestBench {
                             m_memoryModel[txn.addr & ~0x3FULL + i * 8];
                         std::cout << "0x" << std::hex << word << " | ";
                         for (int j = 0; j < 64; j++) {
-                            m_dut->hc_line_in[i * 64 + j] = (word >> j) & 0x1;
+                            m_dut->hc_line_in[(i * 64 + j) / 32] |= (((word >> j) & 0x1) << (j % 32));
                         }
                     }
                     std::cout << "\n";
@@ -357,20 +360,25 @@ class TestBench {
             uint32_t set_addr = start_addr + (i * 64) % (1 << 19); // update set idx
             // fill up ways of the set (supposed to be 3 ways but only 2 work bc of flawed pLRU impl...)
             // the last iteration SHOULD evict 1 way
-            for (int j = 0; j < 5; j++) {
+            for (int j = 0; j < 3; j++) {
                 if (j >= 2) {
                     std::cout << "Should be evicting 1 way of the cache right now\n";
                 }
-                uint32_t addr = set_addr + (j * 2048) % (1 << 19); // update tag (so that it will be in a different way)
+                uint32_t addr = set_addr + ((j * (1<<13)) % (1 << 19)); // update tag (so that it will be in a different way)
                 uint64_t value = 0xDEADBEEF00000000ULL | j;
                 cacheFill(addr);
 
                 driveInputs();
 
                 // Run simulation for a few cycles
-                for (int j = 0; j < 40; j++) {
+                for (int k = 0; k < 100; k++) {
                     tick();
                 }
+            }
+            read(set_addr);
+            driveInputs();
+            for (int k = 0; k < 100; k++) {
+                tick();
             }
         }
     }

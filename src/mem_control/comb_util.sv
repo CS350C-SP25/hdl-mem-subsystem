@@ -53,7 +53,8 @@ module dimm_to_paddr #(
             row_in, 
             bg_in[BANK_GRP_BITS-1:0], 
             ba_in[BANK_BITS-1:0], 
-            col_in
+            col_in,
+            3'b0
         });
     end
 endmodule
@@ -379,20 +380,19 @@ module command_sender #(
                 bursting <= 1'b0;
             end
 
-            if (!empty && req_out.cycle_counter + CAS_LATENCY - 1 == cycle_counter) begin
-                read_burst_ready = 1'b1;
-                dequeue_in <= 1'b1;
+            if (!empty && req_out.cycle_counter + CAS_LATENCY == cycle_counter) begin
+                read_bursting = 1'b1;
                 //set the read addy out on next cock cycle
                 paddr_out <= req_out.paddr;
                 read_col_start <= req_out.col;
-            end else begin
-                dequeue_in <= 1'b0;
             end
 
             if (!empty && req_out.cycle_counter + CAS_LATENCY + 3 == cycle_counter) begin
                 act_out <= 1'b1;
+                dequeue_in <= 1'b1;
             end else begin
                 act_out <= 1'b0;
+                dequeue_in <= 1'b0;
             end
             cycle_counter <= cycle_counter + 1;
         end
@@ -406,20 +406,29 @@ module command_sender #(
         if (!rst_N_in) begin
             burst_counter <= '0;
         end else begin
-            if (read_burst_ready) begin
-                read_bursting <= 1'b1;
-            end
-            if (read_bursting) begin
+            if (cmd_in == WRITE && valid_in && !write_bursting) begin
+                $display("clock edge when i receive valid %x", clk_in);
+                write_bursting <= 1'b1;
+            end if (read_bursting) begin
                 val_out[{(burst_counter + read_col_start)}[2:0]] = mem_bus_value_io;
                 burst_counter <= burst_counter == 7 ? 0 : burst_counter + 1;
-                read_burst_ready = 'b0;
-                read_bursting <= burst_counter != 7;
-            end else if ((cmd_in == WRITE && valid_in) || write_bursting) begin
+                read_bursting = burst_counter != 7;
+                $display("cmd sender read: %x, idx %d", mem_bus_value_io, {(burst_counter + read_col_start)}[2:0]);
+            end else if (write_bursting) begin
                 burst_counter <= burst_counter == 7 ? 0 : burst_counter + 1;
                 write_bursting <= burst_counter != 7;
+                $display("cmd sender bursting: %x clk: %b, burst cunter %x", val_in[burst_counter], clk_in, burst_counter);
             end else begin
                 burst_counter <= 'b0;
             end
         end
-        assign mem_bus_value_io = ((cmd_in == WRITE && valid_in) || write_bursting) ? val_in[burst_counter] : {(64){1'bz}};
+        assign mem_bus_value_io = (write_bursting) ? val_in[burst_counter] : {(64){1'bz}};
 endmodule
+
+// if (read_bursting) begin
+//                 val_out[{(burst_counter + read_col_start)}[2:0]] <= mem_bus_value_io;
+//                 burst_counter <= burst_counter == 7 ? 0 : burst_counter + 1;
+//                 read_burst_ready = 'b0;
+//                 read_bursting <= burst_counter != 7;
+//                 $display("cmd sender previous read: %x, idx = %d", val_out[{(burst_counter + read_col_start - 4'b1)}[2:0]], {(burst_counter + read_col_start - 4'b1)}[2:0]);
+//             end
