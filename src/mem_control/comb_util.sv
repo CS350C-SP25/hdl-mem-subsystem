@@ -53,7 +53,8 @@ module dimm_to_paddr #(
             row_in, 
             bg_in[BANK_GRP_BITS-1:0], 
             ba_in[BANK_BITS-1:0], 
-            col_in
+            col_in,
+            3'b0
         });
     end
 endmodule
@@ -381,18 +382,17 @@ module command_sender #(
 
             if (!empty && req_out.cycle_counter + CAS_LATENCY - 1 == cycle_counter) begin
                 read_burst_ready = 1'b1;
-                dequeue_in <= 1'b1;
                 //set the read addy out on next cock cycle
                 paddr_out <= req_out.paddr;
                 read_col_start <= req_out.col;
-            end else begin
-                dequeue_in <= 1'b0;
             end
 
             if (!empty && req_out.cycle_counter + CAS_LATENCY + 3 == cycle_counter) begin
                 act_out <= 1'b1;
+                dequeue_in <= 1'b1;
             end else begin
                 act_out <= 1'b0;
+                dequeue_in <= 1'b0;
             end
             cycle_counter <= cycle_counter + 1;
         end

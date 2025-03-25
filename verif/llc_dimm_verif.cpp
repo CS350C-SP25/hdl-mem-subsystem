@@ -153,7 +153,7 @@ class TestBench {
         // Update our memory model for the entire cache line (8 words)
         uint32_t aligned_addr = addr & ~0x3FULL;  // Align to 64-byte cache line
         for (int i = 0; i < 16; i++) {
-            m_memoryModel[aligned_addr + i * 16] = aligned_addr;
+            m_memoryModel[aligned_addr + i * 4] = aligned_addr;
         }
 
         m_pendingTransactions.push_back(txn);
@@ -223,7 +223,7 @@ class TestBench {
                             m_memoryModel[txn.addr & ~0x3FULL + i * 8];
                         std::cout << "0x" << std::hex << word << " | ";
                         for (int j = 0; j < 64; j++) {
-                            m_dut->hc_line_in[i * 64 + j] = (word >> j) & 0x1;
+                            m_dut->hc_line_in[(i * 64 + j) / 32] |= (((word >> j) & 0x1) << (j % 32));
                         }
                     }
                     std::cout << "\n";
