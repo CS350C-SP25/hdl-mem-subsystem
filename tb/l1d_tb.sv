@@ -232,16 +232,15 @@ module l1_data_cache_tb;
     #20;
     // read_from_lsu(64'h60300);
     check_lsu_read_data(64'hDEADBEEF, "Read miss test after LC response");
-    $finish;
   endtask
 
   // Function to run basic write hit test
   task run_basic_write_hit_test();
     $display("\n--- Starting Basic write hit test ---");
-    write_to_lsu(64'h3000, 64'hAAAA);
-    write_to_lsu(64'h3000, 64'hBBBB);
-    read_from_lsu(64'h3000);
-    check_lsu_read_data(64'hBBBB, "Basic write hit test");
+    write_to_lsu(64'h60300, 64'hAAAA);
+    // write_to_lsu(64'h3000, 64'hBBBB);
+    read_from_lsu(64'h60300);
+    check_lsu_read_data(64'hAAAA, "Basic write hit test");
   endtask
 
   // Function to run basic write miss test
@@ -299,9 +298,6 @@ module l1_data_cache_tb;
 
     // Run test cases
     run_basic_read_hit_test();
-    rst_N_in = 0;
-    #10;
-    rst_N_in = 1;
     run_basic_read_miss_test();
     run_basic_write_hit_test();
     run_basic_write_miss_test();

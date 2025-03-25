@@ -158,6 +158,8 @@ module l1_data_cache #(
   logic isFree;
   int   freePos;
   logic needToAdd;
+  int   wait_comb;
+  int   wait_reg;
 
   always_comb begin : l1d_combinational_logic
     lsu_valid_out_comb = '0;
@@ -173,6 +175,7 @@ module l1_data_cache #(
     next_state = cur_state;
     needToAdd = 1;
     is_blocked_comb = is_blocked_reg;
+    wait_comb = wait_reg;
 
     /* Cache Inputs */
     cache_flush_next = 0;
@@ -215,6 +218,8 @@ module l1_data_cache #(
           end
         end
 
+        wait_comb = 5;
+
         if (lc_valid_in_reg || lsu_ready_out_comb) begin
           next_state = (lc_valid_in_reg || lsu_we_in_reg) ? WRITE_CACHE : READ_CACHE;
         end
@@ -238,8 +243,9 @@ module l1_data_cache #(
         end else begin
           $display("WRITING FROM LSU");
           cache_hc_valid_next = 1;
+          cache_hc_we_next = 1;
           cache_hc_value_next = lsu_value_in_reg;
-          cache_hc_addr_next  = cur_addr;
+          cache_hc_addr_next = cur_addr;
         end
 
         next_state = (cache_hc_ready_out_reg || cache_lc_ready_out_reg) ? WAIT_CACHE : cur_state;
@@ -275,12 +281,14 @@ module l1_data_cache #(
           cache_hc_ready_next = 1;  // complete transcation
           lsu_value_out_comb = cache_hc_value_out_reg;
           next_state = SEND_RESP_HC;
+        end else begin
+          // was a write from HC but was completed without problem
+          wait_comb -= 1;
+          if (wait_comb == 0) begin
+            lsu_write_complete_out_comb = 1;
+            next_state = IDLE;
+          end
         end
-        // else begin
-        //   // was a write from HC but was completed without problem
-        //   lsu_write_complete_out_comb = 1;
-        //   next_state = IDLE;
-        // end
       end
 
 
@@ -436,8 +444,9 @@ module l1_data_cache #(
       end
 
       COMPLETE_READ: begin
-        lsu_valid_out_comb = cache_hc_valid_out_reg;
-        lsu_value_out_comb = cache_hc_value_out_reg;
+        lsu_valid_out_comb  = cache_hc_valid_out_reg;
+        lsu_value_out_comb  = cache_hc_value_out_reg;
+        cache_hc_ready_next = 1;
 
         // basically, wait until the LSU accepts that our write was done
         if (lsu_ready_in_reg && cache_hc_valid_out_reg) begin
@@ -535,6 +544,7 @@ module l1_data_cache #(
       lsu_addr_out_reg <= lsu_addr_out_comb;
       lsu_value_out_reg <= lsu_value_out_comb;
       lc_value_out_reg <= lc_value_out_comb;
+      wait_reg <= wait_comb;
 
       cur_state <= next_state;
 
