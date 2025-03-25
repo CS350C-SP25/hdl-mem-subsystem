@@ -371,7 +371,7 @@ class TestBench {
                 driveInputs();
 
                 // Run simulation for a few cycles
-                for (int j = 0; j < 40; j++) {
+                for (int j = 0; j < 100; j++) {
                     tick();
                 }
             }

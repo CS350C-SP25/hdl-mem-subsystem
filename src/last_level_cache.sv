@@ -21,7 +21,7 @@
 // protocols do not work well with bi-directional wires anyways.
 
 module last_level_cache #(
-    parameter int A = 8,
+    parameter int A = 3,
     parameter int B = 64,
     parameter int C = 16384,
     parameter int PADDR_BITS = 19, 
