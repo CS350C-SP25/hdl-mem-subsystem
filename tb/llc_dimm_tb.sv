@@ -114,7 +114,7 @@ module llc_dimm_tb (
 
     always_ff @(posedge clk) begin
         if (hc_ready_out) begin
-            $display("HC_READY_OUT %b", hc_ready_out);
+            $display("[LLC] HC_READY_OUT %b", hc_ready_out);
         end
     end
     

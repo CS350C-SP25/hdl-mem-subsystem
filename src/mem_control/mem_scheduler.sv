@@ -435,7 +435,7 @@ module request_scheduler #(
             // Queue selection logic
             if (bank_state_params_out.ready_to_access[bank_idx]) begin
                 // Precharged but not activated
-                $display("adding to activation queue idx %d addr %x\n", bank_idx, mem_bus_addr_in);
+                $display("[SCHEDULER] adding to activation queue idx %d addr %x\n", bank_idx, mem_bus_addr_in);
                 activation_params_in[bank_idx].enqueue_in = 1'b1;
                 activation_params_in[bank_idx].incoming = 1'b1;
                 activation_params_in[bank_idx].req_in = incoming_req;
@@ -443,24 +443,24 @@ module request_scheduler #(
                         bank_state_params_out.active_row_out[bank_idx] == row_in) begin
                 // Active bank, put in respective queue
                 if (write_in) begin
-                    $display("adding to write queue addr %x\n", mem_bus_addr_in);
+                    $display("[SCHEDULER] adding to write queue addr %x\n", mem_bus_addr_in);
                     write_params_in[bank_idx].enqueue_in = 1'b1;
                     write_params_in[bank_idx].incoming = 1'b1;
                     write_params_in[bank_idx].req_in = incoming_req;
                 end else begin
-                    $display("adding to read queue addr %x\n", mem_bus_addr_in);
+                    $display("[SCHEDULER] adding to read queue addr %x\n", mem_bus_addr_in);
                     read_params_in[bank_idx].enqueue_in = 1'b1;
                     read_params_in[bank_idx].incoming = 1'b1;
                     read_params_in[bank_idx].req_in = incoming_req;
                 end
             end else begin
-                $display("adding to precharge queue %d\n", incoming_req.bank_group * incoming_req.bank);
+                $display("[SCHEDULER] adding to precharge queue %d\n", incoming_req.bank_group * incoming_req.bank);
                 precharge_params_in[bank_idx].enqueue_in = 1'b1;
                 precharge_params_in[bank_idx].req_in = incoming_req;
             end
         end
         if (refr_out) begin
-            $display("refreshing bank %x", refr_bank_idx);
+            $display("[SCHEDULER] refreshing bank %x", refr_bank_idx);
             done = 1'b1;
             valid_out_t = 1'b1;
             row_out_t = refr_row_out;
@@ -494,7 +494,7 @@ module request_scheduler #(
                         addr_out_t
                     );
                     last_read_t = cycle_counter_t;
-                    $display("deq read");
+                    // $display("deq read");
                 end
             end else if (!bursting && last_write + 4 <= cycle_counter_t) begin
                 process_bank_commands(
@@ -516,7 +516,7 @@ module request_scheduler #(
                 );
                 last_write_t = done ? cycle_counter_t : last_write;
                 if (done) begin
-                    $display("deq write");
+                    // $display("deq write");
                 end
                 if (!done) begin
                     process_bank_commands(
@@ -537,7 +537,7 @@ module request_scheduler #(
                         addr_out_t
                     );
                     if (done) begin
-                        $display("deq act");
+                        // $display("deq act");
                     end
                 end
                 if (!done) begin
@@ -559,7 +559,7 @@ module request_scheduler #(
                         addr_out_t
                     );
                     if (done) begin
-                        $display("deq pre");
+                        // $display("deq pre");
                     end
                 end
             end
