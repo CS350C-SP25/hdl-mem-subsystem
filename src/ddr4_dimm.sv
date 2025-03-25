@@ -227,6 +227,7 @@ module ddr4_sdram_chip #(
             bank_buffers[bank_idx].write_buffer[burst_count] <= dqs;
             bank_buffers[bank_idx].mask_buffer[burst_count] <= dqm_in;
             burst_count++;
+            $display("dqs: %x", dqs);
         end
     end
 endmodule : ddr4_sdram_chip
