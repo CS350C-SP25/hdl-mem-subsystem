@@ -112,6 +112,7 @@ module l1_data_cache_tb;
     wait (lsu_ready_out);
     lsu_valid_in = 1'b0;
     $display("[%0t]  Write complete acknowledged by LSU", $time);
+    #10;
   endfunction
 
   function void respond_from_lc(input logic [63:0] addr, input logic [511:0] value);
@@ -128,11 +129,12 @@ module l1_data_cache_tb;
   function void read_from_lsu(input logic [63:0] addr);
     $display("[%0t]  Reading from address %h via LSU", $time, addr);
     lsu_addr_in = addr;
-    lsu_we_in = 1'b0;
+    lsu_we_in   = 1'b0;
+    #2;
     lsu_valid_in = 1'b1;
     lsu_ready_in = 1;
     wait (lsu_ready_out);
-    $display("Cache accepted read request");
+    $display("[%0t] Cache accepted read request", $time);
     lsu_valid_in = 1'b0;
     lsu_ready_in = 1'b1;
   endfunction
@@ -246,11 +248,12 @@ module l1_data_cache_tb;
   // Function to run basic write miss test
   task run_basic_write_miss_test();
     $display("\n--- Starting Basic write miss test ---");
-    write_to_lsu(64'h4000, 64'hC0C0C0C0);
-    check_lc_request(1'b1, {PADDR_BITS{1'b0}},
+    write_to_lsu(64'h4050, 64'hC0C0C0C0);
+    check_lc_request(1'b0, {6'b0, 16'h4040},
                      "Basic write miss test");  // Assuming 0 for lc_addr_out in first miss.
-    simulate_lc_ready();
-    @(posedge lsu_write_complete_out);
+    // simulate_lc_ready();
+    simulate_lc_data(lc_addr_out, 512'hDEADBEEF);  // return data from this addr
+    @(posedge lsu_valid_out);
     $display("  LSU write complete acknowledged");
     $display("  Basic write miss test PASSED: Write miss handled and completed!");
   endtask

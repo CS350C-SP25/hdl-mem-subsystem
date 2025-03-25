@@ -277,7 +277,7 @@ module cache #(
         if (lc_valid_reg || cl_in_reg) begin
           changed_way = get_victim_way(plru_state[cur_set]);
           plru_temp[cur_set] = update_plru(plru_state[cur_set], changed_way);
-          next_state = tag_array[changed_way][cur_set].dirty ? EVICT_BLOCK : WRITE_CACHE;
+          next_state = tag_array[changed_way][cur_set].dirty && tag_array[changed_way][cur_set].tag != cur_tag ? EVICT_BLOCK : WRITE_CACHE;
         end else if (cur_hit) begin
           changed_way = get_victim_way(plru_state[cur_set]);
 
