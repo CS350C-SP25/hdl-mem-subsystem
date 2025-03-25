@@ -409,6 +409,7 @@ module l1_data_cache #(
         if (cache_hc_ready_out_reg) begin
           // it took the signal, we can go to the next state, which is returning a signal that write completed, and then cominb back to finish the queue.
           next_state = COMPLETE_WRITE;
+          cache_hc_valid_next = 0;
         end
       end
 
@@ -418,17 +419,19 @@ module l1_data_cache #(
         if (lsu_ready_in_reg) begin
           // LSU was ready, we can just submit the data and exit
           next_state = CLEAR_MSHR;
+          cache_hc_valid_next = 0;
+          lsu_value_out_comb = 0;
         end
       end
 
       READ_FROM_MSHR: begin
         cache_hc_valid_next = 1;
-        cache_hc_we_next = 1;
         // this should NEVER miss because the cache IS blcoking while unqueueing, everything SHOULD hit.
         if (cache_hc_ready_out_reg) begin
           // it took the signal, we can go to the next state, which is returning a signal that read completed, and then cominb back to finish the queue.
           next_state = COMPLETE_READ;
           cache_hc_valid_next = 0;
+          lsu_value_out_comb = 0;
         end
       end
 
@@ -440,6 +443,7 @@ module l1_data_cache #(
         if (lsu_ready_in_reg && cache_hc_valid_out_reg) begin
           // LSU was ready, we can just submit the data and exit
           next_state = CLEAR_MSHR;
+          cache_hc_valid_next = 0;
         end
       end
 

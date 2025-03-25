@@ -365,6 +365,8 @@ module cache #(
       default: next_state = IDLE;
     endcase
 
+    $monitor("[%0t][CACHE] State is %d, Offset is %h, Set is %h, Tag is %h, Addr is %h", $time,
+             cur_state, cur_offset, cur_set, cur_tag, hc_addr_reg);
     // $monitor("[CACHE] Cache data in 0x%h, Line in reg: 0x%h", lc_value_reg, cache_line_in_reg);
   end : generic_cache_combinational
 
@@ -391,6 +393,13 @@ module cache #(
       end
       for (int i = 0; i < NUM_SETS; i++) begin
         plru_state[i] <= '0;
+      end
+
+      for (int i = 0; i < A; i++) begin
+        for (int j = 0; j < NUM_SETS; j++) begin
+          tag_array[i][j].dirty = 0;
+          tag_array[i][j].valid = 0;
+        end
       end
     end else begin
       lc_ready_reg <= lc_ready_in;

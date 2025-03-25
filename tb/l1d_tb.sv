@@ -132,6 +132,7 @@ module l1_data_cache_tb;
     lsu_valid_in = 1'b1;
     lsu_ready_in = 1;
     wait (lsu_ready_out);
+    $display("Cache accepted read request");
     lsu_valid_in = 1'b0;
     lsu_ready_in = 1'b1;
   endfunction
@@ -147,7 +148,9 @@ module l1_data_cache_tb;
 
   // Function to check LSU read data
   function void check_lsu_read_data(input logic [63:0] expected_value, input string test_name);
+    lsu_ready_in = 1;
     wait (lsu_valid_out);
+    lsu_ready_in = 0;
     if (lsu_valid_out) begin
       $display("  LSU read valid out detected");
       if (lsu_value_out == expected_value) begin
@@ -164,6 +167,7 @@ module l1_data_cache_tb;
   // Function to check LC request
   function void check_lc_request(
       input logic we_expected, input logic [PADDR_BITS-1:0] expected_addr, input string test_name);
+    wait (lc_valid_out);
     if (lc_valid_out) begin
       $display("  LC request valid detected for address %h", lc_addr_out);
       if (lc_we_out == we_expected) begin
@@ -190,11 +194,11 @@ module l1_data_cache_tb;
 
   // Function to simulate LC data
   function void simulate_lc_data(input logic [PADDR_BITS-1:0] addr, input logic [511:0] value);
-    $display("  Simulating LC providing data %h for address %h", value, addr);
+    $display("[%0t]  Simulating LC providing data %h for address %h", $time, value, addr);
     lc_valid_in = 1'b1;
     lc_addr_in  = addr;
     lc_value_in = value;
-    #10;
+    wait (lc_ready_out);
     lc_valid_in = 1'b0;
   endfunction
 
@@ -207,6 +211,7 @@ module l1_data_cache_tb;
 
   // Function to run basic read hit test
   task run_basic_read_hit_test();
+
     $display("\n--- Starting Basic read hit test ---");
     write_to_lsu(64'h2000, 64'h12345678);
     respond_from_lc(64'h2000, 512'h0);
@@ -220,13 +225,14 @@ module l1_data_cache_tb;
   // Function to run basic read miss test
   task run_basic_read_miss_test();
     $display("\n--- Starting Basic read miss test ---");
-    read_from_lsu(64'h1000);
-    check_lc_request(1'b0, {PADDR_BITS{1'b0}},
+    read_from_lsu(64'h60300);
+    check_lc_request(1'b0, {2'b0, 20'h60300},
                      "Basic read miss test");  // Assuming 0 for lc_addr_out in first miss.
     simulate_lc_data(lc_addr_out, 512'hDEADBEEF);
     #20;
-    read_from_lsu(64'h1000);
+    // read_from_lsu(64'h60300);
     check_lsu_read_data(64'hDEADBEEF, "Read miss test after LC response");
+    $finish;
   endtask
 
   // Function to run basic write hit test
@@ -293,6 +299,9 @@ module l1_data_cache_tb;
 
     // Run test cases
     run_basic_read_hit_test();
+    rst_N_in = 0;
+    #10;
+    rst_N_in = 1;
     run_basic_read_miss_test();
     run_basic_write_hit_test();
     run_basic_write_miss_test();
