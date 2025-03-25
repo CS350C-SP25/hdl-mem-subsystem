@@ -358,6 +358,7 @@ module sdram_bank #(
         if (!burst_end && rst_N_in) begin
             if (!burst_write) begin
                 next_read = row_buffer[{col_idx[COL_BITS-1:3], burst_current_val}];
+                $display("reading %x", next_read);
                 // $display("NEXT READ ASSIGNED %x %d %d", next_read, active_row, col_idx);
             end else begin
                 row_buffer[{col_idx[COL_BITS-1:3], burst_current_val}] = (row_buffer[{col_idx[COL_BITS-1:3], burst_current_val}] & mask_buffer[burst_current_val]) | (write_buffer[burst_current_val] & ~mask_buffer[burst_current_val]);

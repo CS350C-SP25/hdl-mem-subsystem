@@ -380,8 +380,8 @@ module command_sender #(
                 bursting <= 1'b0;
             end
 
-            if (!empty && req_out.cycle_counter + CAS_LATENCY - 1 == cycle_counter) begin
-                read_burst_ready = 1'b1;
+            if (!empty && req_out.cycle_counter + CAS_LATENCY == cycle_counter) begin
+                read_bursting = 1'b1;
                 //set the read addy out on next cock cycle
                 paddr_out <= req_out.paddr;
                 read_col_start <= req_out.col;
@@ -406,17 +406,14 @@ module command_sender #(
         if (!rst_N_in) begin
             burst_counter <= '0;
         end else begin
-            if (read_burst_ready) begin
-                read_bursting <= 1'b1;
-            end
             if (cmd_in == WRITE && valid_in && !write_bursting) begin
                 $display("clock edge when i receive valid %x", clk_in);
                 write_bursting <= 1'b1;
             end if (read_bursting) begin
                 val_out[{(burst_counter + read_col_start)}[2:0]] = mem_bus_value_io;
                 burst_counter <= burst_counter == 7 ? 0 : burst_counter + 1;
-                read_burst_ready = 'b0;
-                read_bursting <= burst_counter != 7;
+                read_bursting = burst_counter != 7;
+                $display("cmd sender read: %x, idx %d", mem_bus_value_io, {(burst_counter + read_col_start)}[2:0]);
             end else if (write_bursting) begin
                 burst_counter <= burst_counter == 7 ? 0 : burst_counter + 1;
                 write_bursting <= burst_counter != 7;
@@ -427,3 +424,11 @@ module command_sender #(
         end
         assign mem_bus_value_io = (write_bursting) ? val_in[burst_counter] : {(64){1'bz}};
 endmodule
+
+// if (read_bursting) begin
+//                 val_out[{(burst_counter + read_col_start)}[2:0]] <= mem_bus_value_io;
+//                 burst_counter <= burst_counter == 7 ? 0 : burst_counter + 1;
+//                 read_burst_ready = 'b0;
+//                 read_bursting <= burst_counter != 7;
+//                 $display("cmd sender previous read: %x, idx = %d", val_out[{(burst_counter + read_col_start - 4'b1)}[2:0]], {(burst_counter + read_col_start - 4'b1)}[2:0]);
+//             end
