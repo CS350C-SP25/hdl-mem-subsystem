@@ -44,6 +44,7 @@ module l1_data_cache #(
     output logic [63:0] lsu_addr_out,
     output logic [63:0] lsu_value_out,
     output logic lsu_write_complete_out,
+    output logic [TAG_BITS-1:0] lsu_tag_out,
     // Inputs from LLC
     input logic lc_ready_in,
     input logic lc_valid_in,
@@ -78,6 +79,8 @@ module l1_data_cache #(
 
 
 
+
+
   typedef enum logic [3:0] {
     IDLE,
     SEND_REQ_LC,
@@ -86,7 +89,14 @@ module l1_data_cache #(
     READ_CACHE,
     WRITE_CACHE,
     WAIT_CACHE,
+    WAIT_CACHE_READ,
     WAIT_MSHR,
+    CLEAR_MSHR,
+    EVICT,
+    WRITE_FROM_MSHR,
+    READ_FROM_MSHR,
+    COMPLETE_WRITE,
+    COMPLETE_READ,
     FLUSH
   } states;
 
@@ -108,12 +118,17 @@ module l1_data_cache #(
   reg lsu_ready_out_reg;
   reg [63:0] lsu_addr_out_reg;
   reg [63:0] lsu_value_out_reg;
+  reg [TAG_BITS-1:0] lsu_tag_out_reg;
   reg lsu_write_complete_out_reg;
   reg lc_valid_out_reg;
   reg lc_ready_out_reg;
   reg [PADDR_BITS-1:0] lc_addr_out_reg;
   reg [8*B-1:0] lc_value_out_reg;
   reg lc_we_out_reg;
+
+  reg is_blocked_reg;
+  // logic [TAG_BITS-1:0] tag_reg;
+  // logic [TAG_BITS-1:0] tag_comb;
 
   logic lsu_valid_out_comb;
   logic lsu_ready_out_comb;
@@ -123,12 +138,16 @@ module l1_data_cache #(
   logic lc_valid_out_comb;
   logic lc_ready_out_comb;
   logic [PADDR_BITS-1:0] lc_addr_out_comb;
-  logic [63:0] lc_value_out_comb;
+  logic [8*B-1:0] lc_value_out_comb;
   logic lc_we_out_comb;
+
+  logic is_blocked_comb;
 
   localparam int BLOCK_OFFSET_BITS = $clog2(B);
   logic [PADDR_BITS-1:0] cur_addr;
   logic [PADDR_BITS-1:BLOCK_OFFSET_BITS] no_offset_addr;
+
+  logic [TAG_BITS-1:0] lsu_tag_out_comb;
 
   assign cur_addr = lsu_addr_in_reg[PADDR_BITS-1:0];
   assign no_offset_addr = lsu_addr_in_reg[PADDR_BITS-1:BLOCK_OFFSET_BITS];
@@ -141,18 +160,19 @@ module l1_data_cache #(
   logic needToAdd;
 
   always_comb begin : l1d_combinational_logic
-    lsu_valid_out_comb = 1'b0;
+    lsu_valid_out_comb = '0;
     lsu_ready_out_comb = 1'b0;
-    lsu_addr_out_comb = '0;
-    lsu_value_out_comb = '0;
+    lsu_addr_out_comb = lsu_addr_out_reg;
+    lsu_value_out_comb = lsu_value_out_reg;
     lsu_write_complete_out_comb = 1'b0;
     lc_valid_out_comb = 1'b0;
     lc_ready_out_comb = 1'b0;
-    lc_addr_out_comb = '0;
-    lc_value_out_comb = '0;
+    lc_addr_out_comb = lc_addr_out_reg;
+    lc_value_out_comb = lc_value_out_reg;
     lc_we_out_comb = 1'b0;
     next_state = cur_state;
     needToAdd = 1;
+    is_blocked_comb = is_blocked_reg;
 
     /* Cache Inputs */
     cache_flush_next = 0;
@@ -166,6 +186,8 @@ module l1_data_cache #(
     cache_lc_ready_in_next = 0;
     cache_lc_addr_in_next = lc_addr_in_reg;
     cache_lc_value_in_next = lc_value_in_reg;
+
+    lsu_tag_out_comb = lsu_tag_out_reg;
 
     for (int i = 0; i < MSHR_COUNT; i++) begin
       mshr_enqueue[i] = 1'b0;
@@ -183,16 +205,26 @@ module l1_data_cache #(
         if (lc_valid_in_reg) begin
           lc_ready_out_comb = 1;
         end else if (lsu_valid_in_reg) begin
-          lsu_ready_out_comb = 1;
+          // check if all MSHRs are full, if they are, we can't accept this request (womp womp)
+          for (int i = 0; i < MSHR_COUNT; i++) begin
+            if (!mshr_outputs[i].valid) begin
+              // there is a free mshr, we can take the request
+              lsu_ready_out_comb = 1;
+            end
+          end
         end
 
-        if (lc_valid_in_reg || lsu_valid_in_reg) begin
+        if (lc_valid_in_reg || lsu_ready_out_comb) begin
           next_state = (lc_valid_in_reg || lsu_we_in_reg) ? WRITE_CACHE : READ_CACHE;
         end
       end
 
       READ_CACHE: begin
         $display("ATTEMPTING TO READ CACHE DATA");
+        cache_hc_addr_next = cur_addr;
+        cache_hc_valid_next = 1;
+
+        next_state = (cache_hc_ready_out_reg) ? WAIT_CACHE : cur_state;
       end
 
       WRITE_CACHE: begin
@@ -209,10 +241,30 @@ module l1_data_cache #(
       end
 
       WAIT_CACHE: begin
-        if (cache_lc_valid_out_reg) begin
-          // Requesting data from lower cache -- this is a MISS, GOTO MISS STATUS HANDLE REGISTERS
+        // if this was a write from lower cache, we only hae to worry about evictions, not about any of the other stuff
+        if (lc_valid_in_reg) begin
+          // was a write from the lower cache, either evict, or continue to clearing mshr
+          next_state = CLEAR_MSHR;
+          if (cache_lc_valid_out_reg) begin
+            // eviction! handle eviction and then clear MSHR for this addr
+            next_state = EVICT;
+          end else begin
+            // no eviction! we can simply go back to MSHRs and do the whole queue
+          end
+        end else if (cache_lc_valid_out_reg) begin
+          // Requesting data from lower cache -- this is a MISS or EVICTION, GOTO MISS STATUS HANDLE REGISTERS
           cache_lc_ready_in_next = 1;  // complete transcation
+
           next_state = CHECK_MSHR;
+
+          if (cache_we_out_reg) begin
+            // this is an EVICTION
+            lc_value_out_comb = cache_lc_value_out_reg;
+            lc_addr_out_comb = cache_lc_addr_out_reg;
+            lc_we_out_comb = 1;
+
+            next_state = EVICT;
+          end
         end else if (cache_hc_valid_out_reg) begin
           // HIT! We can move to sending data back to the top
           cache_hc_ready_next = 1;  // complete transcation
@@ -220,6 +272,7 @@ module l1_data_cache #(
           next_state = SEND_RESP_HC;
         end
       end
+
 
       CHECK_MSHR: begin
         // go through every MSHR and check if we already have one
@@ -249,12 +302,13 @@ module l1_data_cache #(
             mshr_entries[freePos].tag = lsu_tag_in_reg;
 
             mshr_enqueue[freePos] = 1;
-          end else begin
-            // MSHRs are FULL, need to block
-            // TODO: figure out blocking here
+            next_state = SEND_REQ_LC;
           end
+
+          // now, we shall send a request for the cache line
         end else begin
           // SECONDARY MISS -- let's add to the miss queue
+          next_state = IDLE;
           if (!mshr_full[pos]) begin
             if (lsu_we_in_reg) begin
               // if this is a write, we will add it to the end of the queue
@@ -266,6 +320,8 @@ module l1_data_cache #(
               mshr_entries[pos].tag = lsu_tag_in_reg;
 
               mshr_enqueue[pos] = 1;
+
+              next_state = SEND_REQ_LC;
             end else begin
               // TODO: FWD AND ALSO CHECKING THE ENTIRE QUEUE — HOW? IDK
               // if this is a read, we check if the data being requested is write in MSHR, if it is, we can just fwd
@@ -275,6 +331,7 @@ module l1_data_cache #(
                   // we have a write, we can simply forward this value!
                   lsu_value_out_comb = mshr_queue_full[pos][i].data;
                   needToAdd = 0;
+                  next_state = SEND_RESP_HC;
                 end
               end
 
@@ -287,19 +344,106 @@ module l1_data_cache #(
                 mshr_entries[pos].tag = lsu_tag_in_reg;
 
                 mshr_enqueue[pos] = 1;
+                next_state = SEND_REQ_LC;
               end
             end
 
-            next_state = IDLE;
           end else begin
             // queue is full, cannot add, block request
             // TODO: FIGURE OUT BLOCKING HERE
+            is_blocked_comb = 1;
           end
         end
       end
 
-      default: begin
+      CLEAR_MSHR: begin
+        // TODO: need to dequeu MSHR and complete frfom front to bacl;
+        for (int i = MSHR_COUNT - 1; i >= 0; i--) begin
+          if (mshr_outputs[i].no_offset_addr == lc_addr_in_reg[PADDR_BITS-1:BLOCK_OFFSET_BITS]) begin
+            found = 1;
+            pos   = i;
+          end
+        end
 
+
+        if (!mshr_empty[pos] && mshr_outputs[pos].valid) begin
+          mshr_enqueue[pos]  = 1;
+          // run the request
+          cache_hc_addr_next = mshr_outputs[pos].paddr;
+          lsu_tag_out_comb   = mshr_outputs[pos].tag;
+
+          if (mshr_outputs[pos].we) begin
+            // this is a write 
+            cache_hc_valid_next = 1;
+            cache_hc_value_next = mshr_outputs[pos].data;
+            next_state = WRITE_FROM_MSHR;
+          end else begin
+            // this is A READ
+            next_state = READ_FROM_MSHR;
+          end
+        end else begin
+          next_state = IDLE;  // done doing all the stuff from MSHRs
+        end
+
+      end
+
+      WRITE_FROM_MSHR: begin
+        cache_hc_valid_next = 1;
+        // this should NEVER miss because the cache IS blcoking while unqueueing, everything SHOULD hit.
+        if (cache_hc_ready_out_reg) begin
+          // it took the signal, we can go to the next state, which is returning a signal that write completed, and then cominb back to finish the queue.
+          next_state = COMPLETE_WRITE;
+        end
+      end
+
+      COMPLETE_WRITE: begin
+        lsu_valid_out_comb = 1;
+        // basically, wait until the LSU accepts that our write was done
+        if (lsu_ready_in_reg) begin
+          // LSU was ready, we can just submit the data and exit
+          next_state = CLEAR_MSHR;
+        end
+      end
+
+      READ_FROM_MSHR: begin
+        cache_hc_valid_next = 1;
+        cache_hc_we_next = 1;
+        // this should NEVER miss because the cache IS blcoking while unqueueing, everything SHOULD hit.
+        if (cache_hc_ready_out_reg) begin
+          // it took the signal, we can go to the next state, which is returning a signal that write completed, and then cominb back to finish the queue.
+          next_state = COMPLETE_READ;
+        end
+      end
+
+      COMPLETE_READ: begin
+        lsu_valid_out_comb = 1;
+        // basically, wait until the LSU accepts that our write was done
+        if (lsu_ready_in_reg) begin
+          // LSU was ready, we can just submit the data and exit
+          next_state = CLEAR_MSHR;
+        end
+      end
+
+      EVICT: begin
+        lc_valid_out_comb = 1;
+        lc_we_out_comb = 1;
+
+        if (lc_ready_in_reg) begin
+          // transcation done, we can go back to the clearing registers
+          next_state = CLEAR_MSHR;
+        end
+      end
+
+      SEND_REQ_LC: begin
+        lc_valid_out_comb = 1;
+        lc_addr_out_comb  = cache_lc_addr_out_reg;
+        if (lc_ready_in_reg) begin  // the LC took in the request, we are good
+          next_state = IDLE;
+        end
+      end
+
+      default: begin
+        next_state = IDLE;
       end
     endcase
   end
@@ -328,35 +472,39 @@ module l1_data_cache #(
       lc_addr_out_reg <= '0;
       lc_value_out_reg <= '0;
       lc_we_out_reg <= 1'b0;
+      // pos_reg <= 0;
     end else if (!cs_N_in) begin
       if (next_state == IDLE) begin
         flush_in_reg <= flush_in;
         lsu_valid_in_reg <= lsu_valid_in;
-        lsu_ready_in_reg <= lsu_ready_in;
         lsu_addr_in_reg <= lsu_addr_in;
         lsu_value_in_reg <= lsu_value_in;
         lsu_tag_in_reg <= lsu_tag_in;
         lsu_we_in_reg <= lsu_we_in;
-        lc_ready_in_reg <= lc_ready_in;
         lc_valid_in_reg <= lc_valid_in;
         lc_addr_in_reg <= lc_addr_in;
         lc_value_in_reg <= lc_value_in;
 
-        lsu_valid_out_reg <= lsu_valid_out;
-        lsu_ready_out_reg <= lsu_ready_out;
-        lsu_addr_out_reg <= lsu_addr_out;
-        lsu_value_out_reg <= lsu_value_out;
         lsu_write_complete_out_reg <= lsu_write_complete_out;
-        lc_valid_out_reg <= lc_valid_out;
         lc_ready_out_reg <= lc_ready_out;
-        lc_addr_out_reg <= lc_addr_out;
-        lc_value_out_reg <= lc_value_out;
-        lc_we_out_reg <= lc_we_out;
+        lsu_ready_out_reg <= lc_ready_out_comb;
       end
 
+      lc_ready_in_reg <= lc_ready_in;
       lc_ready_out_reg <= lc_ready_out_comb;
-      lsu_ready_out_reg <= lc_ready_out_comb;
+      lc_addr_out_reg <= lc_addr_out_comb;
+      lc_valid_out_reg <= lc_valid_out_comb;
+      lc_we_out_reg <= lc_we_out_comb;
+      lsu_valid_out_reg <= lsu_valid_out_comb;
+      lsu_ready_out_reg <= lsu_ready_out_comb;
+      lsu_addr_out_reg <= lsu_addr_out_comb;
+      lsu_value_out_reg <= lsu_value_out_comb;
+      lc_value_out_reg <= lc_value_out_comb;
+
       cur_state <= next_state;
+
+      lsu_ready_in_reg <= lsu_ready_in;
+      is_blocked_reg <= is_blocked_comb;
 
       /* Update Cache Input States */
       cache_flush_reg <= cache_flush_next;
@@ -371,6 +519,8 @@ module l1_data_cache #(
       cache_lc_ready_in_reg <= cache_lc_ready_in_next;
       cache_lc_addr_in_reg <= cache_lc_addr_in_next;
       cache_lc_value_in_reg <= cache_lc_value_in_next;
+      // pos_reg <= pos;
+      lsu_tag_out_reg <= lsu_tag_out_comb;
     end
   end
 
@@ -488,6 +638,7 @@ module l1_data_cache #(
   assign lc_addr_out = lc_addr_out_reg;
   assign lc_value_out = lc_value_out_reg;
   assign lc_we_out = lc_we_out_reg;
+  assign lsu_tag_out = lsu_tag_out_reg;
 
 
 endmodule : l1_data_cache

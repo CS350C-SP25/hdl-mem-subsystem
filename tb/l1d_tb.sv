@@ -34,6 +34,7 @@ module l1_data_cache_tb;
   wire [PADDR_BITS-1:0] lc_addr_out;
   wire [511:0] lc_value_out;
   wire lc_we_out;
+  logic [TAG_BITS-1:0] out_tag;
 
   // Instantiate the device Under Test (dut)
   l1_data_cache #(
@@ -67,7 +68,8 @@ module l1_data_cache_tb;
       .lc_addr_out(lc_addr_out),
       .lc_value_out(lc_value_out),
       .lc_we_out(lc_we_out),
-      .lsu_tag_in(0)
+      .lsu_tag_in(0),
+      .lsu_tag_out(out_tag)
   );
 
   // Clock generation
@@ -109,8 +111,17 @@ module l1_data_cache_tb;
     lsu_valid_in = 1'b1;
     wait (lsu_ready_out);
     lsu_valid_in = 1'b0;
-    @(posedge lsu_write_complete_out);
     $display("  Write complete acknowledged by LSU");
+  endfunction
+
+  function void respond_from_lc(input logic [63:0] addr, input logic [511:0] value);
+    lc_ready_in = 1;
+    lc_value_in = value;
+    lc_valid_in = 1;
+    lc_addr_in  = addr[22-1:0];
+    wait (lc_ready_out);
+    lc_valid_in = 0;
+    $display("Sent LC response back");
   endfunction
 
   // Function to read from LSU
@@ -119,7 +130,7 @@ module l1_data_cache_tb;
     lsu_addr_in = addr;
     lsu_we_in = 1'b0;
     lsu_valid_in = 1'b1;
-    #10;
+    wait (lsu_ready_out);
     lsu_valid_in = 1'b0;
   endfunction
 
@@ -188,6 +199,8 @@ module l1_data_cache_tb;
   task run_basic_read_hit_test();
     $display("\n--- Starting Basic read hit test ---");
     write_to_lsu(64'h2000, 64'h12345678);
+    respond_from_lc(64'h2000, 512'h0);
+    $display("WROTE\nNOW READING\n");
     read_from_lsu(64'h2000);
     check_lsu_read_data(64'h12345678, "Basic read hit test");
   endtask
