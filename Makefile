@@ -19,7 +19,11 @@ $(info OBJCACHE: $(OBJCACHE))
 VERILATOR ?= /u/nate/verilator
 
 # Flags
-VFLAGS = --binary -j $$(( `nproc` - 16 )) --trace --trace-underscore --compiler clang
+ifeq ($(shell uname),Linux)
+	VFLAGS = --binary -j $$(( `nproc` - 16 )) --trace --trace-underscore --compiler clang
+else
+	VFLAGS = --binary -j $$(( `nproc` - 1 )) --trace --trace-underscore --compiler clang
+endif
 
 # Target-specific flags
 DIMM_VFLAGS = $(VFLAGS) --top-module ddr4_dimm
