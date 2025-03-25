@@ -93,7 +93,7 @@ void write_command (bool pre, uint8_t col, uint8_t bank_num, uint64_t (&data_to_
     dut->addr_in = 0;
 
     // Set the column address
-    dut->addr_in |= (col.to_ulong() & ((1 << COL_BITS) - 1));
+    dut->addr_in |= (static_cast<unsigned long>(col) & ((1 << COL_BITS) - 1));
 
     // Setting specific bits manually
     dut->addr_in |= (1 << 16);
@@ -137,7 +137,7 @@ void read_command (bool pre, uint8_t col, uint8_t bank_num) {
     dut->addr_in = 0;
 
     // Set the column address
-    dut->addr_in |= (col.to_ulong() & ((1 << COL_BITS) - 1));
+    dut->addr_in |= (static_cast<unsigned long>(col) & ((1 << COL_BITS) - 1));
 
     // Setting specific bits manually
     dut->addr_in |= (1 << 16);
@@ -197,7 +197,7 @@ int main (int argc, char **argv) {
 	  precharge (random_bank);
 	} else if (random_op == 3) {
 	  // write command
-          random_col = col_distr(rng);
+          int random_col = col_distr(rng);
 	  //generate random data to write out
 	  uint64_t data_to_write[8];
 	  for (int i = 0; i < 8; i++) {
@@ -207,7 +207,7 @@ int main (int argc, char **argv) {
 	  write_command (1, random_col, random_bank, data_to_write);
 	} else if (random_op == 4) {
 	  // read command
-          random_col = col_distr(rng);
+          int random_col = col_distr(rng);
 	  cout << "Reading from col " << random_col << " in bank " << random_bank << endl;
 	  read_command (1, random_col, random_bank);
 	}
