@@ -279,6 +279,7 @@ module cache #(
           changed_way = get_victim_way(plru_state[cur_set]);
           plru_temp[cur_set] = update_plru(plru_state[cur_set], changed_way);
           next_state = tag_array[changed_way][cur_set].dirty ? EVICT_BLOCK : WRITE_CACHE;
+          $display("[CACHE] considering dirty %b for set 0x%x", tag_array[changed_way][cur_set].dirty, cur_set);
           if (tag_array[changed_way][cur_set].dirty) begin
             $display("[%0t] we evicted 🌾 at %x", $time, hc_addr_in);
           end
@@ -294,7 +295,7 @@ module cache #(
             next_state = RESPOND_HC;
           end
         end else begin
-          $display("[%0t] we missed 🥀 at %x", $time, hc_addr_in);
+          $display("[%0t] we missed 🥀 at %x, set 0x%x", $time, hc_addr_in, cur_set);
           changed_way = get_victim_way(plru_state[cur_set]);
           next_state  = SEND_LOWER_CACHE_REQ;
         end
