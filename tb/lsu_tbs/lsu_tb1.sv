@@ -688,6 +688,144 @@ provide_l1d_response(i[3:0], 64'hFEEDBEEF + 64'(i));
   reset_dut();
   random_fuzz_test(16);  // Run 16 random transactions
 
+  $display("\n=== Test 22: Load waits for in-flight Store to same address ===");
+  reset_dut();
+  issue_instruction(4'h1, 1); provide_data(4'h1, 64'hD000, 64'hAAAA_BBBB); // Store
+  issue_instruction(4'h2, 0); provide_data(4'h2, 64'hD000);                // Load to same addr
+  repeat(3) @(posedge clk);
+  signal_store_complete(4'h1);  // Only now load can resolve
+  expected_completions = {4'h1, 4'h2};
+  expected_values = {64'h0, 64'hAAAA_BBBB};
+  wait_for_completions();
+
+  $display("\n=== Test 23: Out-of-order Store completions ===");
+  reset_dut();
+  issue_instruction(4'h3, 1); provide_data(4'h3, 64'hE000, 64'h1111_0000);
+  issue_instruction(4'h4, 1); provide_data(4'h4, 64'hE000, 64'h2222_0000);
+  repeat(2) @(posedge clk);
+  signal_store_complete(4'h4);  // Complete newer one first
+  repeat(2) @(posedge clk);
+  signal_store_complete(4'h3);  // Then older one
+  expected_completions = {4'h4, 4'h3};
+  expected_values = {64'h0, 64'h0};
+  wait_for_completions();
+
+
+  $display("\n=== Test 24: Simultaneous independent stores ===");
+  reset_dut();
+  issue_instruction(4'h5, 1); provide_data(4'h5, 64'h6000, 64'h1111_1111);
+  issue_instruction(4'h6, 1); provide_data(4'h6, 64'h7000, 64'h2222_2222);
+  repeat(1) @(posedge clk);
+  signal_store_complete(4'h6);
+  signal_store_complete(4'h5);
+  expected_completions = {4'h6, 4'h5};
+  expected_values = {64'h0, 64'h0};
+  wait_for_completions();
+
+
+    $display("\n=== Test 25: Store and Load with same tag but different addresses ===");
+    // reset_dut();
+    // issue_instruction(4'h7, 1); provide_data(4'h7, 64'h8000, 64'hBEEF_BEEF);
+    // signal_store_complete(4'h7);
+
+    // // Reuse tag 4'h7 for unrelated load
+    // issue_instruction(4'h7, 0); provide_data(4'h7, 64'hDEAD);
+    // repeat (2) @(posedge clk);
+    // provide_l1d_response(4'h7, 64'hABCD_1234);
+
+    // expected_completions.push_back(4'h7); expected_values.push_back(64'h0);       // first was store
+    // expected_completions.push_back(4'h7); expected_values.push_back(64'hABCD_1234); // second is load
+    // wait_for_completions();
+    $display("\n=== Test 26: One store, multiple dependent loads ===");
+    reset_dut();
+    issue_instruction(4'h8, 1); provide_data(4'h8, 64'h9090, 64'h9999_9999);
+    issue_instruction(4'h9, 0); provide_data(4'h9, 64'h9090);
+    issue_instruction(4'hA, 0); provide_data(4'hA, 64'h9090);
+    signal_store_complete(4'h8);  
+
+    
+
+    expected_completions = {4'h8, 4'h9, 4'hA};
+    expected_values = {64'h0, 64'h9999_9999, 64'h9999_9999};
+    wait_for_completions();
+
+    $display("\n=== Test 27: Queue Full then Accept Stalled Instruction After Completion ===");
+    reset_dut();
+
+    // Step 1: Fill the queue to capacity with stores
+    for (int i = 0; i < QUEUE_DEPTH; i++) begin
+      issue_instruction(i[3:0], 1); // store
+      provide_data(i[3:0], 64'hA000 + 64'(i * 8), 64'hFACE0000 + 64'(i));
+    end
+
+    // Step 2: Try to issue one more instruction, which should stall until there's room
+    fork
+      begin
+        $display("[TB] Attempting stalled instruction with tag 0xF (should wait)");
+        issue_instruction(4'hF, 1); // should block until space frees up
+        provide_data(4'hF, 64'hBEEF, 64'hF00D);
+        $display("[TB] Stalled instruction with tag 0xF accepted");
+      end
+    join_none
+
+    // Step 3: Free a slot by completing one of the earlier stores
+    repeat (5) @(posedge clk);
+    signal_store_complete(4'h0); // complete tag 0
+    expected_completions.push_back(4'h0);
+    expected_values.push_back(64'h0);
+
+    // Step 4: Wait for rest of completions, including the one that was stalled
+    for (int i = 1; i < QUEUE_DEPTH; i++) begin
+      repeat (1) @(posedge clk);
+      signal_store_complete(i[3:0]);
+      expected_completions.push_back(i[3:0]);
+      expected_values.push_back(64'h0);
+    end
+
+    // Final one (tag 0xF)
+    repeat (3) @(posedge clk);
+    signal_store_complete(4'hF);
+    expected_completions.push_back(4'hF);
+    expected_values.push_back(64'h0);
+
+    wait_for_completions();
+
+  $display("\n=== Test 28: Load Starved by Store Flood ===");
+  reset_dut();
+  for (int i = 0; i < QUEUE_DEPTH - 1; i++) begin
+    issue_instruction(i[3:0], 1); // Fill with stores
+    provide_data(i[3:0], 64'h6000 + 64'(i * 8), 64'hCAFE0000 + 64'(i));
+  end
+
+  issue_instruction(4'hE, 0); // One load
+  provide_data(4'hE, 64'h6000); // Same addr as first store
+
+  // Delay store completions to test if load forwards eventually
+  repeat (10) @(posedge clk);
+  for (int i = 0; i < QUEUE_DEPTH - 1; i++) begin
+    signal_store_complete(i[3:0]);
+    expected_completions.push_back(i[3:0]);
+    expected_values.push_back(64'h0);
+  end
+  expected_completions.push_back(4'hE);
+  expected_values.push_back(64'hCAFE0000); // Should forward from first store
+  wait_for_completions();
+
+  $display("\n=== Test 31: Multiple loads waiting on same addr (no forwarding) ===");
+  reset_dut();
+  issue_instruction(4'h1, 0); provide_data(4'h1, 64'h1234);
+  issue_instruction(4'h2, 0); provide_data(4'h2, 64'h1234);
+  issue_instruction(4'h3, 0); provide_data(4'h3, 64'h1234);
+
+  repeat (5) @(posedge clk);
+  provide_l1d_response(4'h1, 64'hAAAA);
+  provide_l1d_response(4'h2, 64'hBBBB);
+  provide_l1d_response(4'h3, 64'hCCCC);
+
+  expected_completions = {4'h1, 4'h2, 4'h3};
+  expected_values = {64'hAAAA, 64'hBBBB, 64'hCCCC};
+  wait_for_completions();
+
 
     $display("\n=== Test Summary ===");
     $display("Tests passed: %0d, Tests failed: %0d", test_passed, test_failed);
