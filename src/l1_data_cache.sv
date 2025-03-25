@@ -476,9 +476,12 @@ module l1_data_cache #(
 
       SEND_RESP_HC: begin
         lsu_valid_out_comb = 1;
-        lsu_addr_out_comb  = {42'b0, cache_hc_addr_out_reg};
+        // Zero-pad the physical address to 64 bits
+        // The original code {{{64 - PADDR_BITS} {'b0}}, cache_hc_addr_out_reg} caused an error
+        // because the replication count was potentially unsized.
+        // Casting to 64' achieves the same zero-padding result more robustly.
+        lsu_addr_out_comb  = 64'(cache_hc_addr_out_reg);
         lsu_value_out_comb = cache_hc_value_out_reg;
-        // lsu_tag_out = 
         if (lsu_ready_in_reg) begin
           next_state = IDLE;
         end
