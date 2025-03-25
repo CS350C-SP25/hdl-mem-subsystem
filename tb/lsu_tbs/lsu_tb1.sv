@@ -1,5 +1,4 @@
 `timescale 1ns/1ps
-import types::*;
 
 //=====================================================================
 // TESTBENCH FOR load_store_unit
@@ -357,6 +356,7 @@ endtask
   //-------------------------------------------------------------------------
   // Test Sequence
   //-------------------------------------------------------------------------
+  logic [TAG_WIDTH-1:0] store_tag;
   initial begin
     $dumpfile("lsu_test.vcd");
     $dumpvars(0, load_store_unit_tb_complex);
@@ -825,6 +825,41 @@ provide_l1d_response(i[3:0], 64'hFEEDBEEF + 64'(i));
   expected_completions = {4'h1, 4'h2, 4'h3};
   expected_values = {64'hAAAA, 64'hBBBB, 64'hCCCC};
   wait_for_completions();
+
+
+$display("\n=== Test 33: 8 Loads to Different Addresses with Interleaved Stores ===");
+// what am i doing at this point
+reset_dut();
+
+// Step 1: Issue 8 LOAD instructions to different addresses
+for (int i = 0; i < 8; i++) begin
+  logic [TAG_WIDTH-1:0] tag = i[3:0];
+  issue_instruction(tag, 0); // LOAD
+  provide_data(tag, 64'h1000 + 64'(i * 8));
+end
+
+// Step 2: After each L1D response, issue a STORE to a different address
+
+for (int i = 0; i < 8; i++) begin
+  logic [TAG_WIDTH-1:0] load_tag = i[3:0];
+  logic [63:0] load_addr = 64'h1000 + 64'(i * 8);
+  logic [63:0] load_val  = 64'hAAAA0000 + 64'(i);
+
+  repeat (3) @(posedge clk);
+  provide_l1d_response(load_tag, load_val);
+  expected_completions.push_back(load_tag);
+  expected_values.push_back(load_val);
+
+   store_tag = 4'h8 + i[3:0];
+  issue_instruction(store_tag, 1); // STORE
+  provide_data(store_tag, 64'h2000 + 64'(i * 8), 64'hBBBB0000 + 64'(i));
+  repeat (1) @(posedge clk);
+  signal_store_complete(store_tag);
+  expected_completions.push_back(store_tag);
+  expected_values.push_back(64'h0);
+end
+
+wait_for_completions();
 
 
     $display("\n=== Test Summary ===");

@@ -1,5 +1,4 @@
 `timescale 1ns / 1ps
-import types::*;
 
 //=====================================================================
 // Top-Level Load-Store Unit
@@ -98,7 +97,7 @@ module load_store_unit #(
       .completion_tag_out  (completion_tag_out)
   );
   always_ff @(posedge clk_in) begin
-    //$display("new cycle occurred at %0t", $time);
+    $display("new cycle occurred at %0t", $time);
   end
 
 
@@ -204,7 +203,7 @@ module lsu_queue #(
 
 
   logic display_needed;
-  always_ff @(posedge clk_in or negedge rst_N_in) begin
+  always_ff @(posedge clk_in  ) begin
     if (!rst_N_in) begin
       display_needed <= 1'b0;
     end else begin
@@ -336,7 +335,7 @@ module lsu_queue #(
   endtask
 
   // logic to send one of these to completion!
-  always_ff @(posedge clk_in or negedge rst_N_in) begin
+  always_ff @(posedge clk_in  ) begin
     if (!rst_N_in) begin
       completion_valid_out <= 1'b0;
       completion_value_out <= 64'd0;
@@ -372,7 +371,7 @@ module lsu_queue #(
   // ----------------------------------------------------------------
   // 3) Enqueue logic
   // ----------------------------------------------------------------
-  always_ff @(posedge clk_in or negedge rst_N_in) begin
+  always_ff @(posedge clk_in  ) begin
     if (!rst_N_in) begin
       head_ptr <= '0;
       tail_ptr <= '0;
@@ -456,8 +455,8 @@ module lsu_queue #(
             end
             // Then free the entry
             queue[i].valid <= 1'b0;
-            // $display("LSU Queue: Completing %s for tag %h at index %0d",
-            //          (queue[i].op_type == OP_LOAD) ? "LOAD" : "STORE", queue[i].tag, i);
+            $display("LSU Queue: Completing %s for tag %h at index %0d",
+                     (queue[i].op_type == OP_LOAD) ? "LOAD" : "STORE", queue[i].tag, i);
             display_queue_status();
 
             break;
@@ -580,8 +579,8 @@ endfunction
           candidate_found = 1'b1;
           candidate_index = int'(idx);  // Cast idx to int for assignment
           candidate_kind  = dk;
-          // $display("Time %0t: LSU Queue: Found load for tag %h at index %0d", $time,
-          //          queue[idx].tag, idx);
+          $display("Time %0t: LSU Queue: Found load for tag %h at index %0d", $time,
+                   queue[idx].tag, idx);
           break;
         end
       end
@@ -614,7 +613,7 @@ endfunction
   logic [63:0] reg_dispatch_addr, reg_dispatch_value;
   logic [TAG_WIDTH-1:0] reg_dispatch_tag;
 
-  always_ff @(posedge clk_in or negedge rst_N_in) begin
+  always_ff @(posedge clk_in  ) begin
     if (!rst_N_in) begin
       reg_dispatch_valid    <= 1'b0;
       reg_dispatch_is_store <= 1'b0;
@@ -715,7 +714,7 @@ logic [TAG_WIDTH-1:0] lat_tag;
 // ----------------------------------------------------------------
 // 1) State register
 // ----------------------------------------------------------------
-always_ff @(posedge clk_in or negedge rst_N_in) begin
+always_ff @(posedge clk_in  ) begin
   if (!rst_N_in)
     curr_state <= S_IDLE;
   else
@@ -753,7 +752,7 @@ end
 // ----------------------------------------------------------------
 // 3) L1D Request Generation & Latching (outputs for dispatch)
 // ----------------------------------------------------------------
-always_ff @(posedge clk_in or negedge rst_N_in) begin
+always_ff @(posedge clk_in  ) begin
   if (!rst_N_in) begin
     lat_is_store         <= 1'b0;
     lat_addr             <= 64'd0;
@@ -808,7 +807,7 @@ end
 // ----------------------------------------------------------------
 // This block monitors for a valid response (l1d_valid_in) ,
 // and generates the completion handshake accordingly.
-always_ff @(posedge clk_in or negedge rst_N_in) begin
+always_ff @(posedge clk_in  ) begin
   if (!rst_N_in) begin
     completion_valid_out <= 1'b0;
     completion_tag_out   <= '0;
@@ -995,7 +994,7 @@ module lsu_control #(
   );
 
   // Completion Selection Logic
-  always_ff @(posedge clk_in or negedge rst_N_in) begin
+  always_ff @(posedge clk_in  ) begin
     if (!rst_N_in) begin
       completion_valid_out <= 1'b0;
       completion_value_out <= 64'd0;
@@ -1014,15 +1013,15 @@ module lsu_control #(
 
       end  // If no queue completion, check Memory Interface
       else if (mem_completion_valid) begin
-        //$display("in the else if");
+        $display("in the else if");
         completion_valid_out <= 1'b1;
         completion_value_out <= mem_completion_value;
         completion_tag_out   <= mem_completion_tag;
 
-        // $display("LSU Control: Completing instruction from MEMORY (tag=%h, value=0x%h)",
-        //          mem_completion_tag, mem_completion_value);
+        $display("LSU Control: Completing instruction from MEMORY (tag=%h, value=0x%h)",
+                 mem_completion_tag, mem_completion_value);
       end
-      // $display("Time: %0t that signal is now: %d", $time, lsu_queue_stall);
+      $display("Time: %0t that signal is now: %d", $time, lsu_queue_stall);
     end
   end
 
