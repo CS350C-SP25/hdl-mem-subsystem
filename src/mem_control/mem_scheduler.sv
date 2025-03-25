@@ -28,8 +28,8 @@ module request_scheduler #(
     output logic valid_out
 );
 
-        localparam LOWER_ADDR_BITS_C = COL_BITS+$clog2(BANK_GROUPS)+$clog2(BANKS_PER_GROUP);
-        localparam LOWER_ADDR_BITS_R = ROW_BITS+$clog2(BANK_GROUPS)+$clog2(BANKS_PER_GROUP);
+    localparam LOWER_ADDR_BITS_C = COL_BITS+$clog2(BANK_GROUPS)+$clog2(BANKS_PER_GROUP);
+    localparam LOWER_ADDR_BITS_R = ROW_BITS+$clog2(BANK_GROUPS)+$clog2(BANKS_PER_GROUP);
 
     typedef struct packed {
         logic [PADDR_BITS-1:0] addr;
@@ -187,6 +187,7 @@ module request_scheduler #(
     logic[31:0] last_write;
     logic[31:0] last_write_t;
     logic [$clog2(BANK_GROUPS) + $clog2(BANKS_PER_GROUP) - 1:0] bank_idx;
+    logic [$clog2(BANK_GROUPS) + $clog2(BANKS_PER_GROUP) - 1:0] refr_bank_idx;
     logic [$clog2(BANK_GROUPS)-1:0] bank_group_in;
     logic [$clog2(BANKS_PER_GROUP)-1:0] bank_in;
     logic [ROW_BITS-1:0] row_in;
@@ -218,8 +219,15 @@ module request_scheduler #(
     logic [511:0] val_out_t;
     logic [2:0] cmd_out_t; // 0 is read, 1 is write, 2 is activate, 3 is precharge; if valid_out is 0 then block
     logic valid_out_t;
+
+    // refresh regs
+    logic [$clog2(BANK_GROUPS)-1:0] refr_bank_group_out;
+    logic [$clog2(BANKS_PER_GROUP)-1:0] refr_bank_out;
+    logic [ROW_BITS-1:0] refr_row_out;
+    logic refr_out;
     
     assign bank_idx = ({bank_group_in[0], bank_in});
+    assign refr_bank_idx = ({refr_bank_group_out[0], refr_bank_out});
     assign cycle_counter_t = cycle_counter;
 
     address_parser #(
@@ -251,6 +259,25 @@ module request_scheduler #(
         bank_state_params_out.ready_to_access, 
         bank_state_params_out.active_bank,
         bank_state_params_out.blocked 
+    );
+
+    auto_refresh #(
+        .BANK_GROUPS(BANK_GROUPS),
+        .BANKS_PER_GROUP(BANKS_PER_GROUP),
+        .ROW_BITS(ROW_BITS),
+        .ACTIVATION_LATENCY(ACTIVATION_LATENCY),
+        .PRECHARGE_LATENCY(PRECHARGE_LATENCY), 
+        .REFRESH_LATENCY(ACTIVATION_LATENCY + PRECHARGE_LATENCY),
+        .BANKS(BANK_GROUPS * BANKS_PER_GROUP),
+        .REFRESH_INTERVAL(64_000_000)
+    ) _auto_refresh(
+        clk_in,
+        rst_in,
+
+        refr_bank_group_out,
+        refr_bank_out,
+        refr_row_out,
+        refr_out
     );
 
     // step 3b. enqueues if activation_queue is promoting its top element and not a write request. dequeues when promote is active
@@ -432,7 +459,20 @@ module request_scheduler #(
                 precharge_params_in[bank_idx].req_in = incoming_req;
             end
         end
-        if (cmd_ready) begin // DRAM has a one cycle slot for the SDRAM controller to send out the command, let's see which bank queue to send command out
+        if (refr_out) begin
+            $display("refreshing bank %x", refr_bank_idx);
+            done = 1'b1;
+            valid_out_t = 1'b1;
+            row_out_t = refr_row_out;
+            bank_out_t = refr_bank_out;
+            bank_group_out_t = refr_bank_group_out;
+            addr_out_t = {1'b0, 1'b1, 2'b0, 1'b1, bank_group_out_t, bank_out_t, {(14-LOWER_ADDR_BITS_R){1'b0}}, row_out_t};
+            bank_state_params_in.precharge = '0;
+            bank_state_params_in.precharge[refr_bank_idx] = 1'b1;
+            bank_state_params_in.row_address = row_out_t;
+            val_out_t = 'b0;
+        end
+        if (cmd_ready & ~refr_out) begin // DRAM has a one cycle slot for the SDRAM controller to send out the command, let's see which bank queue to send command out
             // Update params array
             if (read_prio) begin // are there any pending read requests that are older than write reqeusts?
                 if (last_read < cycle_counter_t - 4) begin // ensure that there has been at least 4 cycles since the last read command (bursting)
