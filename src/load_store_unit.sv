@@ -481,7 +481,7 @@ module lsu_queue #(
   // We'll look for one candidate (load or store) at a time to dispatch.
   // The memory interface can only handle one outstanding transaction.
 
-  typedef enum logic [1:0] {
+  typedef enum logic [1:0] { // remnants of a long lost state machine
     DISPATCH_NONE,
     DISPATCH_FORWARD,
     DISPATCH_MEMORY
@@ -495,6 +495,7 @@ module lsu_queue #(
     for (int step = 0; step < QUEUE_DEPTH; step++) begin
       idx = (idx == 0) ? (QUEUE_DEPTH - 1) : (idx - 1);
       if (idx == j) return 1;
+      if (idx == int'(head_ptr)) break;
     end
     return 0;
   endfunction
@@ -507,7 +508,7 @@ module lsu_queue #(
       for (int step = 0; step < QUEUE_DEPTH; step++) begin
         idx = (idx + 1) % QUEUE_DEPTH;
         if (idx == i) return 1; // if we reach i from j by going forward, i is younger
-        if (idx == int'(tail_ptr)) break;
+        if (idx == int'(tail_ptr)) break; // how did i not have this before :/
       end
     return 0;
 endfunction
