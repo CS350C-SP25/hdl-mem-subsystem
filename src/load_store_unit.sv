@@ -41,7 +41,7 @@ module load_store_unit #(
     output logic [63:0] l1d_addr_out,
     output logic [63:0] l1d_value_out,
     output logic l1d_we_out,
-    output logic [TAG_WIDTH-1:0]l1d_tag_out,
+    output logic [TAG_WIDTH-1:0] l1d_tag_out,
 
     // Completion Interface Outputs
     output logic completion_valid_out,
@@ -95,7 +95,7 @@ module load_store_unit #(
       .completion_tag_out  (completion_tag_out)
   );
   always_ff @(posedge clk_in) begin
-    $display("new cycle occurred at %0t", $time);
+    // $display("new cycle occurred at %0t", $time);
   end
 
 
@@ -190,9 +190,10 @@ module lsu_queue #(
     $display("Head: %0d, Tail: %0d, Count: %0d", head_ptr, tail_ptr, count);
     for (int i = 0; i < QUEUE_DEPTH; i++) begin
       if (queue[i].valid) begin
-        $display("Entry[%0d]: Tag=%h, %s, EA_Resolved=%b, Dispatched=%b, Addr=0x%h, Value=0x%h, Complete=0x%h", i,
-                 queue[i].tag, (queue[i].op_type == OP_LOAD) ? "LOAD" : "STORE",
-                 queue[i].ea_resolved, queue[i].dispatched, queue[i].addr, queue[i].value, queue[i].complete);
+        $display(
+            "Entry[%0d]: Tag=%h, %s, EA_Resolved=%b, Dispatched=%b, Addr=0x%h, Value=0x%h, Complete=0x%h",
+            i, queue[i].tag, (queue[i].op_type == OP_LOAD) ? "LOAD" : "STORE", queue[i].ea_resolved,
+            queue[i].dispatched, queue[i].addr, queue[i].value, queue[i].complete);
       end
     end
     $display("=====================\n");
@@ -201,7 +202,7 @@ module lsu_queue #(
 
 
   logic display_needed;
-  always_ff @(posedge clk_in  ) begin
+  always_ff @(posedge clk_in) begin
     if (!rst_N_in) begin
       display_needed <= 1'b0;
     end else begin
@@ -318,8 +319,10 @@ module lsu_queue #(
         // Must be younger in ring buffer
         if (is_younger(l, store_idx)) begin
           if (queue[l].ea_resolved && (queue[l].addr == store_addr) && !queue[l].dispatched) begin
-            $display("Forward: younger load(tag=%h) idx=%0d from store(tag=%h) => data=0x%h, at index %d",
-                     queue[l].tag, l, store_tag, store_data, store_idx); // this is WRONG. how is it saying it is younger??
+            $display(
+                "Forward: younger load(tag=%h) idx=%0d from store(tag=%h) => data=0x%h, at index %d",
+                queue[l].tag, l, store_tag, store_data,
+                store_idx);  // this is WRONG. how is it saying it is younger??
 
             // Mark the load done
             queue[l].value <= store_data;
@@ -333,7 +336,7 @@ module lsu_queue #(
   endtask
 
   // logic to send one of these to completion!
-  always_ff @(posedge clk_in  ) begin
+  always_ff @(posedge clk_in) begin
     if (!rst_N_in) begin
       completion_valid_out <= 1'b0;
       completion_value_out <= 64'd0;
@@ -369,7 +372,7 @@ module lsu_queue #(
   // ----------------------------------------------------------------
   // Enqueue logic
   // ----------------------------------------------------------------
-  always_ff @(posedge clk_in  ) begin
+  always_ff @(posedge clk_in) begin
     if (!rst_N_in) begin
       head_ptr <= '0;
       tail_ptr <= '0;
@@ -409,7 +412,7 @@ module lsu_queue #(
             end
             queue[i].ea_resolved   <= 1'b1;
             waiting_for_data_count <= waiting_for_data_count - 1;
-          
+
             if (queue[i].op_type == OP_LOAD) begin
               // forward from older store => pass in load_addr, load_idx, load_tag
               forward_from_older_store(addr_in, i, queue[i].tag);
@@ -451,7 +454,7 @@ module lsu_queue #(
       end
 
       // Pop exactly one completed entry each cycle
-      if (count > 0 && !queue[head_ptr].valid) begin // edge case?
+      if (count > 0 && !queue[head_ptr].valid) begin  // edge case?
         head_ptr <= head_ptr + 1'b1;
         count    <= count    - 1'b1;
       end
@@ -465,7 +468,7 @@ module lsu_queue #(
   // We'll look for one candidate (load or store) at a time to dispatch.
   // The memory interface can only handle one outstanding transaction.
 
-  typedef enum logic [1:0] { // remnants of a long lost state machine
+  typedef enum logic [1:0] {  // remnants of a long lost state machine
     DISPATCH_NONE,
     DISPATCH_FORWARD,
     DISPATCH_MEMORY
@@ -489,13 +492,13 @@ module lsu_queue #(
     int idx;
     if (i == j) return 0;
     idx = j;
-      for (int step = 0; step < QUEUE_DEPTH; step++) begin
-        idx = (idx + 1) % QUEUE_DEPTH;
-        if (idx == i) return 1; // if we reach i from j by going forward, i is younger
-        if (idx == int'(tail_ptr)) break; // how did i not have this before :/
-      end
+    for (int step = 0; step < QUEUE_DEPTH; step++) begin
+      idx = (idx + 1) % QUEUE_DEPTH;
+      if (idx == i) return 1;  // if we reach i from j by going forward, i is younger
+      if (idx == int'(tail_ptr)) break;  // how did i not have this before :/
+    end
     return 0;
-endfunction
+  endfunction
 
 
   // Decide if an entry is dispatchable
@@ -511,7 +514,7 @@ endfunction
                 i, s
             ) && !queue[s].complete) begin
           if (queue[s].ea_resolved && (queue[s].addr == queue[i].addr)) begin
-              return DISPATCH_FORWARD;
+            return DISPATCH_FORWARD;
           end
           if (!queue[s].ea_resolved) return DISPATCH_NONE;
         end
@@ -558,10 +561,10 @@ endfunction
 
     // First, search for a load
     for (int k = 0; k < count; k++) begin
-  
+
       if (queue[idx].valid && queue[idx].ea_resolved && !queue[idx].dispatched &&
                 (queue[idx].op_type == OP_LOAD) && !queue[idx].complete) begin // needed to add complete field to ensure it hasnt been forwarded to
-                $display("made it here");
+        $display("made it here");
         dk = check_dispatchable(int'(idx));  // Cast idx to int for function call
         if (dk != DISPATCH_NONE) begin
           candidate_found = 1'b1;
@@ -572,7 +575,7 @@ endfunction
           break;
         end
       end
-      idx = idx + 1'b1; 
+      idx = idx + 1'b1;
     end
 
     // If no load found, search for a store
@@ -580,7 +583,7 @@ endfunction
 
       idx = head_ptr;
       for (int k = 0; k < count; k++) begin
-        
+
         if (queue[idx].valid && queue[idx].ea_resolved && !queue[idx].dispatched &&
                     (queue[idx].op_type == OP_STORE) && !queue[idx].complete) begin // needed to add complete field to ensure it hasnt been forwarded to
 
@@ -604,7 +607,7 @@ endfunction
   logic [63:0] reg_dispatch_addr, reg_dispatch_value;
   logic [TAG_WIDTH-1:0] reg_dispatch_tag;
 
-  always_ff @(posedge clk_in  ) begin
+  always_ff @(posedge clk_in) begin
     if (!rst_N_in) begin
       reg_dispatch_valid    <= 1'b0;
       reg_dispatch_is_store <= 1'b0;
@@ -641,7 +644,7 @@ endfunction
       end 
             // **Important**: ONLY drop reg_dispatch_valid after the memory interface is "ready" (it latched us)
       else if (reg_dispatch_valid && dispatch_ready_in) begin
-        reg_dispatch_valid <= 1'b0; // this signal might be broken
+        reg_dispatch_valid <= 1'b0;  // this signal might be broken
       end
     end
   end
@@ -657,196 +660,189 @@ endmodule : lsu_queue
 
 /* TODO Figure out signals, i.e. l1d_ready_out, PROC_INSTR_READY, PROC_DATA_READY*/
 module memory_interface #(
-  parameter int QUEUE_DEPTH = 32,
-  parameter int TAG_WIDTH = 10
+    parameter int QUEUE_DEPTH = 32,
+    parameter int TAG_WIDTH   = 10
 ) (
-  // Clock/Reset
-  input  logic         clk_in,
-  input  logic         rst_N_in,
-  input  logic         cs_N_in,
+    // Clock/Reset
+    input logic clk_in,
+    input logic rst_N_in,
+    input logic cs_N_in,
 
-  //=== Dispatch handshake (from LSU Queue) ===
-  input  logic         dispatch_valid_in,   // Producer's "Valid"
-  output logic         dispatch_ready_out,  // Our "Ready"
-  input  logic         dispatch_is_store_in,
-  input  logic [63:0]  dispatch_addr_in,
-  input  logic [63:0]  dispatch_value_in,
-  input  logic [TAG_WIDTH-1:0] dispatch_tag_in,
+    //=== Dispatch handshake (from LSU Queue) ===
+    input  logic                 dispatch_valid_in,     // Producer's "Valid"
+    output logic                 dispatch_ready_out,    // Our "Ready"
+    input  logic                 dispatch_is_store_in,
+    input  logic [         63:0] dispatch_addr_in,
+    input  logic [         63:0] dispatch_value_in,
+    input  logic [TAG_WIDTH-1:0] dispatch_tag_in,
 
-  //=== L1 Cache Interface (inputs) ===
-  input  logic         l1d_valid_in,        // L1D has a response (completion ready)
-  input  logic         l1d_ready_in,        // L1D can accept new commands
-  input  logic [63:0]  l1d_addr_in,
-  input  logic [63:0]  l1d_value_in,
-  input  logic [TAG_WIDTH-1:0] l1d_tag_in,
-  input  logic         l1d_write_complete_in,
+    //=== L1 Cache Interface (inputs) ===
+    input logic                 l1d_valid_in,          // L1D has a response (completion ready)
+    input logic                 l1d_ready_in,          // L1D can accept new commands
+    input logic [         63:0] l1d_addr_in,
+    input logic [         63:0] l1d_value_in,
+    input logic [TAG_WIDTH-1:0] l1d_tag_in,
+    input logic                 l1d_write_complete_in,
 
-  //=== L1 Cache Interface (outputs) ===
-  output logic         l1d_valid_out,       // Valid request to L1D
-  output logic         l1d_ready_out,       // Not used heavily in this example
-  output logic [63:0]  l1d_addr_out,
-  output logic [63:0]  l1d_value_out,
-  output logic         l1d_we_out,
-  output  logic [TAG_WIDTH-1:0] l1d_tag_out,
+    //=== L1 Cache Interface (outputs) ===
+    output logic                 l1d_valid_out,  // Valid request to L1D
+    output logic                 l1d_ready_out,  // Not used heavily in this example
+    output logic [         63:0] l1d_addr_out,
+    output logic [         63:0] l1d_value_out,
+    output logic                 l1d_we_out,
+    output logic [TAG_WIDTH-1:0] l1d_tag_out,
 
-  //=== Completion back to LSU Queue ===
-  output logic         completion_valid_out,
-  output logic [63:0]  completion_value_out,
-  output logic [TAG_WIDTH-1:0] completion_tag_out
+    //=== Completion back to LSU Queue ===
+    output logic                 completion_valid_out,
+    output logic [         63:0] completion_value_out,
+    output logic [TAG_WIDTH-1:0] completion_tag_out
 );
 
-// ----------------------------------------------------------------
-// Simple handshake state machine
-// ----------------------------------------------------------------
-typedef enum logic [1:0] {
-  S_IDLE      = 2'd0,  // Waiting for a new dispatch
-  S_DISPATCH  = 2'd1,  // Driving valid request to L1D until it sees "ready"
-  S_WAIT_RESP = 2'd2   // Wait here until l1d_ready_in goes low
-} state_e;
+  // ----------------------------------------------------------------
+  // Simple handshake state machine
+  // ----------------------------------------------------------------
+  typedef enum logic [1:0] {
+    S_IDLE      = 2'd0,  // Waiting for a new dispatch
+    S_DISPATCH  = 2'd1,  // Driving valid request to L1D until it sees "ready"
+    S_WAIT_RESP = 2'd2   // Wait here until l1d_ready_in goes low
+  } state_e;
 
-state_e curr_state, next_state;
+  state_e curr_state, next_state;
 
-// Latched dispatch fields
-logic         lat_is_store;
-logic [63:0]  lat_addr, lat_value;
-logic [TAG_WIDTH-1:0] lat_tag;
+  // Latched dispatch fields
+  logic lat_is_store;
+  logic [63:0] lat_addr, lat_value;
+  logic [TAG_WIDTH-1:0] lat_tag;
 
-// ----------------------------------------------------------------
-// State register
-// ----------------------------------------------------------------
-always_ff @(posedge clk_in  ) begin
-  if (!rst_N_in)
-    curr_state <= S_IDLE;
-  else
-    curr_state <= next_state;
-end
-
-// ----------------------------------------------------------------
-// Next-state logic
-// ----------------------------------------------------------------
-always_comb begin
-  // Default: remain in current state
-  next_state = curr_state;
-  case (curr_state)
-    S_IDLE: begin
-      $display("I'm in idle");
-      if (dispatch_valid_in) begin
-        next_state = S_DISPATCH;
-        $display("going into dispatch!");
-
-      end
-
-    end
-
-    S_DISPATCH: begin
-      // Remain until L1D asserts ready (to accept our request)
-      $display("im in dispatch");
-      if (l1d_ready_in) begin
-        next_state = S_WAIT_RESP;
-        $display("going into resp!");
-      end
-    end
-
-    S_WAIT_RESP: begin
-      // Instead of checking l1d_valid_in, wait until l1d_ready_in goes low
-      $display("im waiting for resp");
-      if (!l1d_ready_in) begin
-        next_state = S_IDLE;
-        $display("going into idle!");
-      end
-    end
-
-    default: ;
-  endcase
-end
-
-// ----------------------------------------------------------------
-// L1D Request Generation & Latching (outputs for dispatch)
-// ----------------------------------------------------------------
-always_ff @(posedge clk_in  ) begin
-  if (!rst_N_in) begin
-    lat_is_store         <= 1'b0;
-    lat_addr             <= 64'd0;
-    lat_value            <= 64'd0;
-    lat_tag              <= '0;
-
-    l1d_valid_out        <= 1'b0;
-    l1d_addr_out         <= 64'd0;
-    l1d_value_out        <= 64'd0;
-    l1d_we_out           <= 1'b0;
-    l1d_tag_out <= {TAG_WIDTH{1'b0}};
-    l1d_ready_out = 1'b0;
+  // ----------------------------------------------------------------
+  // State register
+  // ----------------------------------------------------------------
+  always_ff @(posedge clk_in) begin
+    if (!rst_N_in) curr_state <= S_IDLE;
+    else curr_state <= next_state;
   end
-  else begin
-    l1d_ready_out = 1'b1;
+
+  // ----------------------------------------------------------------
+  // Next-state logic
+  // ----------------------------------------------------------------
+  always_comb begin
+    // Default: remain in current state
+    next_state = curr_state;
     case (curr_state)
       S_IDLE: begin
-        l1d_valid_out <= 1'b0;
-        dispatch_ready_out <= 1'b1; // ready for dispatch FROM LSU
+        // $display("I'm in idle");
         if (dispatch_valid_in) begin
-          $display("dispatch latched");
-          // Latch incoming dispatch fields
-          lat_is_store <= dispatch_is_store_in;
-          lat_addr     <= dispatch_addr_in;
-          lat_value    <= dispatch_value_in;
-          lat_tag      <= dispatch_tag_in;
+          next_state = S_DISPATCH;
+          $display("going into dispatch!");
+
         end
+
       end
 
       S_DISPATCH: begin
-        // Drive L1D with our request while L1D is ready
-        dispatch_ready_out <= 1'b0; // Not ready for dispatch from LSU
-        l1d_valid_out        <= 1'b1;
-        l1d_tag_out  <=  lat_tag;
-        l1d_addr_out          <= lat_addr;
-        l1d_value_out         <= lat_value;
-        l1d_we_out            <= lat_is_store;
-        // Once L1D asserts its ready, the state machine will move to S_WAIT_RESP
-        
-      end
-
-      S_WAIT_RESP: begin
-        // Nothing needed here—the state machine simply waits for l1d_ready_in to drop.
-        if (!l1d_ready_in ) begin // wait while l1d not ready for another dispatch
-          // put valid down when the ready signal goes low
-          // and move on to next operation
-          l1d_valid_out <= 1'b0;
+        // Remain until L1D asserts ready (to accept our request)
+        $display("im in dispatch");
+        if (l1d_ready_in) begin
+          next_state = S_WAIT_RESP;
+          $display("going into resp!");
         end
       end
 
+      S_WAIT_RESP: begin
+        // Instead of checking l1d_valid_in, wait until l1d_ready_in goes low
+        $display("im waiting for resp");
+        if (!l1d_ready_in) begin
+          next_state = S_IDLE;
+          $display("going into idle!");
+        end
+      end
 
       default: ;
     endcase
   end
-end
 
-// ----------------------------------------------------------------
-// Completion Generation (separate always_ff block)
-// ----------------------------------------------------------------
-//  monitors for a valid response (l1d_valid_in) ,
-// generates the completion handshake accordingly.
-always_ff @(posedge clk_in  ) begin
-  if (!rst_N_in) begin
-    completion_valid_out <= 1'b0;
-    completion_tag_out   <= '0;
-    completion_value_out <= 64'd0;
-  end
-  else begin
-    if (l1d_valid_in) begin
+  // ----------------------------------------------------------------
+  // L1D Request Generation & Latching (outputs for dispatch)
+  // ----------------------------------------------------------------
+  always_ff @(posedge clk_in) begin
+    if (!rst_N_in) begin
+      lat_is_store  <= 1'b0;
+      lat_addr      <= 64'd0;
+      lat_value     <= 64'd0;
+      lat_tag       <= '0;
+
+      l1d_valid_out <= 1'b0;
+      l1d_addr_out  <= 64'd0;
+      l1d_value_out <= 64'd0;
+      l1d_we_out    <= 1'b0;
+      l1d_tag_out   <= {TAG_WIDTH{1'b0}};
       l1d_ready_out = 1'b0;
-      completion_valid_out <= 1'b1;
-      completion_tag_out   <= l1d_tag_in;
-      if (!l1d_write_complete_in)
-        completion_value_out <= l1d_value_in;
-      else
-        completion_value_out <= 64'd0;
+    end else begin
+      l1d_ready_out = 1'b1;
+      case (curr_state)
+        S_IDLE: begin
+          l1d_valid_out <= 1'b0;
+          dispatch_ready_out <= 1'b1;  // ready for dispatch FROM LSU
+          if (dispatch_valid_in) begin
+            $display("dispatch latched");
+            // Latch incoming dispatch fields
+            lat_is_store <= dispatch_is_store_in;
+            lat_addr     <= dispatch_addr_in;
+            lat_value    <= dispatch_value_in;
+            lat_tag      <= dispatch_tag_in;
+          end
+        end
+
+        S_DISPATCH: begin
+          // Drive L1D with our request while L1D is ready
+          dispatch_ready_out <= 1'b0;  // Not ready for dispatch from LSU
+          l1d_valid_out      <= 1'b1;
+          l1d_tag_out        <= lat_tag;
+          l1d_addr_out       <= lat_addr;
+          l1d_value_out      <= lat_value;
+          l1d_we_out         <= lat_is_store;
+          // Once L1D asserts its ready, the state machine will move to S_WAIT_RESP
+
+        end
+
+        S_WAIT_RESP: begin
+          // Nothing needed here—the state machine simply waits for l1d_ready_in to drop.
+          if (!l1d_ready_in) begin  // wait while l1d not ready for another dispatch
+            // put valid down when the ready signal goes low
+            // and move on to next operation
+            l1d_valid_out <= 1'b0;
+          end
+        end
+
+
+        default: ;
+      endcase
     end
-    else begin
-      completion_valid_out <= 1'b0;
-    end
-    l1d_ready_out = 1'b1;
   end
-end
+
+  // ----------------------------------------------------------------
+  // Completion Generation (separate always_ff block)
+  // ----------------------------------------------------------------
+  //  monitors for a valid response (l1d_valid_in) ,
+  // generates the completion handshake accordingly.
+  always_ff @(posedge clk_in) begin
+    if (!rst_N_in) begin
+      completion_valid_out <= 1'b0;
+      completion_tag_out   <= '0;
+      completion_value_out <= 64'd0;
+    end else begin
+      if (l1d_valid_in) begin
+        l1d_ready_out = 1'b0;
+        completion_valid_out <= 1'b1;
+        completion_tag_out   <= l1d_tag_in;
+        if (!l1d_write_complete_in) completion_value_out <= l1d_value_in;
+        else completion_value_out <= 64'd0;
+      end else begin
+        completion_valid_out <= 1'b0;
+      end
+      l1d_ready_out = 1'b1;
+    end
+  end
 endmodule
 
 
@@ -1001,7 +997,7 @@ module lsu_control #(
   );
 
   // Completion Selection Logic
-  always_ff @(posedge clk_in  ) begin
+  always_ff @(posedge clk_in) begin
     if (!rst_N_in) begin
       completion_valid_out <= 1'b0;
       completion_value_out <= 64'd0;
@@ -1031,7 +1027,7 @@ module lsu_control #(
   end
 
   // Processor handshake signals
-  
+
   assign proc_instr_ready_out = !lsu_queue_stall;
   assign proc_data_ready_out  = waiting_for_data;
 

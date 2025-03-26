@@ -36,7 +36,7 @@ LSU_VFLAGS = $(VFLAGS) --top-module load_store_unit_tb_complex
 LLC_DIMM_VFLAGS = $(VFLAGS) --top-module llc_dimm_tb
 L1D_LLC_DIMM_VFLAGS = $(VFLAGS) --top-module l1d_llc_tb
 L1D_LLC_VFLAGS = ${VFLAGS} --top-module l1d_llc_tb
-L1D_LSU_VFLAGS = ${VFLAGS} --top-module l1d_lsu_tb
+L1D_LSU_VFLAGS = ${VFLAGS} --top-module lsu_l1d_actual_tb
 
 # Source files
 DIMM_SRCS = --cc src/ddr4_dimm.sv --exe verif/dimm_tb2.cpp
@@ -48,7 +48,7 @@ L1D_SRCS = --cc --timing src/l1_data_cache.sv tb/l1d_tb.sv src/mem_control/comb_
 LSU_SRCS = --cc --timing src/load_store_unit.sv tb/lsu_tbs/lsu_tb1.sv  # still adding more
 LLC_DIMM_SRCS = --cc --timing tb/llc_dimm_tb.sv src/cache.sv src/last_level_cache.sv src/ddr4_dimm.sv src/mem_control/bank_state.sv src/mem_control/comb_util.sv src/mem_control/mem_scheduler.sv src/mem_control/req_queue.sv src/mem_control/auto_refresh.sv --exe verif/llc_dimm_verif.cpp
 L1D_LLC_SRCS = --cc --timing tb/l1d_llc_tb.sv src/cache.sv src/last_level_cache.sv src/l1_data_cache.sv src/mem_control/bank_state.sv src/mem_control/comb_util.sv src/mem_control/mem_scheduler.sv src/mem_control/req_queue.sv src/mem_control/auto_refresh.sv --exe verif/l1d_llc_verif.cpp
-L1D_LSU_SRCS = --cc --timing tb/l1d_lsu_tb.sv src/cache.sv src/load_store_unit.sv src/last_level_cache.sv src/l1_data_cache.sv src/mem_control/bank_state.sv src/mem_control/comb_util.sv src/mem_control/mem_scheduler.sv src/mem_control/req_queue.sv src/mem_control/auto_refresh.sv --exe verif/l1d_lsu_verif.cpp
+L1D_LSU_SRCS = --cc --timing tb/l1d_lsu_tb.sv tb/lsu_l1d_actual_tb.sv src/cache.sv src/load_store_unit.sv src/last_level_cache.sv src/l1_data_cache.sv src/mem_control/bank_state.sv src/mem_control/comb_util.sv src/mem_control/mem_scheduler.sv src/mem_control/req_queue.sv src/mem_control/auto_refresh.sv
 
 # Output binaries
 DIMM_BIN = obj_dir/Vddr4_dimm
@@ -60,7 +60,7 @@ L1D_BIN = obj_dir/Vl1_data_cache_tb
 LSU_BIN = obj_dir/Vload_store_unit_tb_complex
 LLC_DIMM_BIN = obj_dir/Vllc_dimm_tb
 L1D_LLC_BIN = obj_dir/Vl1d_llc_tb
-L1D_LSU_BIN = obj_dir/Vl1d_lsu_tb
+L1D_LSU_BIN = obj_dir/Vlsu_l1d_actual_tb
 
 # Default target (alias for dimm)
 all: dimm

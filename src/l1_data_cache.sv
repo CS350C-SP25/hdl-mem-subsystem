@@ -223,7 +223,7 @@ module l1_data_cache #(
 
         if (flush_in) begin
           next_state = FLUSH;
-        end else if (lc_valid_in_reg || lsu_ready_out_comb) begin
+        end else if (lc_valid_in_reg || (lsu_ready_out_comb && lsu_valid_in_reg)) begin
           next_state = (lc_valid_in_reg || lsu_we_in_reg) ? WRITE_CACHE : READ_CACHE;
         end
       end
