@@ -6,6 +6,7 @@
 #include <bitset>
 #include <random>
 
+using namespace std;
 // Column-address strobe latency. Delay in cycles between read request and data being ready
 const int ACTIVATION_LATENCY= 8;  // latency in cycles to activate row buffer
 const int PRECHARGE_LATENCY =5;  // latency in cycles to precharge (clear row buffer)
@@ -14,11 +15,33 @@ const int COL_BITS =4;
 const int BANKS =8;
 const int REFRESH_CYCLE= 5120;
 const int BURST_LOAD =8;
-const vluint64_t max_sim_time= 6000; // however many cycles we are taking, this is prob not correct
+const vluint64_t max_sim_time= 100; // however many cycles we are taking, this is prob not correct
 static Vddr4_dimm* dut;
-vluint64_t sim_time;
+uint16_t bank_data [BANKS] [256] [16];
 static VerilatedVcdC* m_trace;
-using namespace std;
+vluint64_t sim_time;
+
+// init a random num generator
+random_device rd;
+mt19937 rng(rd());
+uniform_int_distribution<int> op_distr(1,4);
+uniform_int_distribution<int> bank_distr(1,8);
+uniform_int_distribution<int> row_distr(1,256);
+uniform_int_distribution<int> col_distr(1,16);
+uniform_int_distribution<uint16_t> data_distr;
+
+ // Simulated DIMM Memory Structure
+ struct Bank {
+    vector<vector<uint16_t>> memory;
+    bool row_active = false;
+    uint16_t active_row = 0;
+};
+
+Bank banks[BANKS];
+
+// VCD trace file toggle
+const bool ENABLE_WAVES = true;
+
 
 void toggleClock(int num = 2) {
     for (int i = 0; i < num; i++) {
@@ -26,7 +49,7 @@ void toggleClock(int num = 2) {
         dut->clk_in ^= 1;
         dut->eval();
         dut->eval();
-        m_trace->dump(sim_time);
+        //m_trace->dump(sim_time);
     }
 }
 
@@ -46,13 +69,14 @@ void dut_reset () {
 }
 
 void activate (unsigned bank_num, unsigned row, unsigned clock) {
-    while (clock) {
-        dut->cs_N_in = 0;
-        dut->act_in = 0;
-        dut->addr_in = 0;
-        dut->addr_in = row;
-        dut->bg_in = bank_num;
-    }
+    dut->cs_N_in = 0;
+    dut->act_in = 0;
+    dut->addr_in = 0;
+    dut->addr_in = row;
+    dut->bg_in = bank_num;
+    Bank& bank = banks[bank_num];
+    bank.row_active = true;
+    bank.active_row = row;
 }
 
 void precharge (uint8_t bank_num) {
@@ -77,9 +101,12 @@ void precharge (uint8_t bank_num) {
 
     // zero out dqs reg
     dut->dqs = 0;
+
+    Bank& bank = banks[bank_num];
+    bank.row_active = false;
 }
 
-void write_command (bool pre, uint8_t col, uint8_t bank_num, uint64_t (&data_to_write)[8]) {
+void write_command (bool pre, uint8_t col, uint8_t bank_num, uint16_t data_to_write) {
 
     // Assigning bank group bits
     dut->bg_in |= (bank_num & 0b1);
@@ -101,18 +128,10 @@ void write_command (bool pre, uint8_t col, uint8_t bank_num, uint64_t (&data_to_
     dut->addr_in &= ~(1 << 14);
 
     // Writing out data 
-    dut->dqs = data_to_write[0];
-    dut->dqs = data_to_write[1];
-    toggleClock(); // assuming that this toggled 1 cycle
-    dut->dqs = data_to_write[2];
-    dut->dqs = data_to_write[3];
-    toggleClock();
-    dut->dqs = data_to_write[4];
-    dut->dqs = data_to_write[5];
-    toggleClock();
-    dut->dqs = data_to_write[6];
-    dut->dqs = data_to_write[7];
-    toggleClock();
+    dut->dqs = data_to_write;
+    Bank& bank = banks[bank_num];
+    bank_data [bank_num] [bank.active_row] [col] = data_to_write; 
+
     //precharge
     if (pre) {
         dut->addr_in |= (1 << 10);
@@ -122,9 +141,14 @@ void write_command (bool pre, uint8_t col, uint8_t bank_num, uint64_t (&data_to_
 
     dut->cs_N_in = 1;
     dut->dqs = 0;
+
+    // CAS latency
+    for (int i = 0; i < 22; i++) {
+        toggleClock();
+    }
 }
 
-void read_command (bool pre, uint8_t col, uint8_t bank_num) {
+uint16_t read_command (bool pre, uint8_t col, uint8_t bank_num) {
     // Assigning bank group bits
     dut->bg_in |= (bank_num & 0b1);
     dut->ba_in |= ((bank_num & 0b110) >> 1);
@@ -150,67 +174,71 @@ void read_command (bool pre, uint8_t col, uint8_t bank_num) {
     } else {
         dut->addr_in &= ~(1 << 10);
     }
-
+    Bank& bank = banks[bank_num];
     dut->cs_N_in = 1;
     dut->dqs = 0;
+    uint16_t read_data = bank_data [bank_num] [bank.active_row] [col];
+    return read_data;
 }
+
+// Issue a bunch of writes then reads
+void runWRTest(int num_operations, unsigned clock) {
+    cout << "Running a basic write-read test" << endl;
+    for (int i = 1; i <= num_operations; i++) {
+        int bank = bank_distr(rng);
+        uint16_t row = row_distr(rng);
+        uint16_t col = col_distr(rng);
+        uint16_t write_data = data_distr(rng);
+
+
+        cout << "Activating bank " << bank << " at row " << row << endl;
+        activate(bank, row, clock);
+        
+        cout << "Issuing write of " << write_data << " to bank " << bank << " row " << row << " col " << col << endl;
+        write_command (1, col, bank, write_data);
+    
+        cout << "Reading data just written... " << endl;
+        uint16_t read_data = read_command (1, col, bank);
+
+        cout << "Data read is " << read_data << endl;
+    
+        assert(read_data == write_data);
+    
+        precharge (bank);
+    }
+}
+
 
 int main (int argc, char **argv) {
     Verilated::commandArgs(argc, argv);
+    //Verilated::traceEverOn(true);
+
     dut = new Vddr4_dimm;
-    Verilated::traceEverOn(true);
     m_trace = new VerilatedVcdC;
-    dut->trace(m_trace, 5);
-    m_trace->open("dump.vcd");
-    
-    // init a random num generator
-    random_device rd;
-    mt19937 rng(rd());
+    // dut->trace(m_trace, 5);
+    // m_trace->open("dump.vcd");
 
-    uniform_int_distribution<int> op_distr(1,4);
-    uniform_int_distribution<int> bank_distr(1,8);
-    uniform_int_distribution<int> row_distr(1,256);
-    uniform_int_distribution<int> col_distr(1,16);
-    uniform_int_distribution<int> data_distr(0,100000); // randomizing data
+    // initalize bank states
+    for (int i = 0; i < BANKS; i++) {
+        for (int j = 0; j < 256; j++) {
+            for (int k = 0; k < 16; k++) {
+                bank_data [i] [j] [k] = 0;
+            }
+        }
+    }
 
-     sim_time = 0; // simulator time
 
-        toggleClock();
+    sim_time = 0; // simulator time
+
+    toggleClock();
    
     // initialize
     dut->rst_N_in = 1;
-    dut->clk_in = 0;
+    dut->clk_in = 1;
     dut->eval();
-    m_trace->dump(sim_time);
+    //m_trace->dump(sim_time);
     while (sim_time < max_sim_time) {
-	int random_op = op_distr(rng);
-	int random_bank = bank_distr(rng);
-	int random_row = row_distr(rng);
-
-	if (random_op == 1) {
-	  // activate command
-          cout << "Activating row " << random_row << " in bank " << random_bank << endl;
-	  activate (random_bank, random_row, dut->clk_in);
-	} else if (random_op == 2) {
-	  // precharge command
-          cout << "Precharging active row in bank " << random_bank << endl;
-	  precharge (random_bank);
-	} else if (random_op == 3) {
-	  // write command
-          int random_col = col_distr(rng);
-	  //generate random data to write out
-	  uint64_t data_to_write[8];
-	  for (int i = 0; i < 8; i++) {
-	    data_to_write[i] = data_distr(rng);
-	    cout << "Writing " << data_to_write[i] << " to col " << random_col << " in bank " << random_bank << endl;
-	  } 
-	  write_command (1, random_col, random_bank, data_to_write);
-	} else if (random_op == 4) {
-	  // read command
-          int random_col = col_distr(rng);
-	  cout << "Reading from col " << random_col << " in bank " << random_bank << endl;
-	  read_command (1, random_col, random_bank);
-	}
+	runWRTest(10, dut->clk_in);
     }
     m_trace->close();
     delete dut;
