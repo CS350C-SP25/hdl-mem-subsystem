@@ -388,14 +388,15 @@ module l1_data_cache #(
         //   // $display("The addr was %h and %h", lc_addr_in_reg[PADDR_BITS-1:BLOCK_OFFSET_BITS],
         //   //          mshr_outputs[i].no_offset_addr);
         //   if (mshr_outputs[i].no_offset_addr == lc_addr_in_reg[PADDR_BITS-1:BLOCK_OFFSET_BITS]) begin
+        //     $display("Found data %d", i);
         //     found = 1;
         //     pos   = i;
         //   end
         // end
 
         for (int i = 0; i < MSHR_COUNT; i++) begin
-          // $display("The addr was %h and %h", lc_addr_in_reg[PADDR_BITS-1:BLOCK_OFFSET_BITS],
-          //          mshr_outputs[i].no_offset_addr);
+          $display("The addr was %h and %h", lc_addr_in_reg[PADDR_BITS-1:BLOCK_OFFSET_BITS],
+                   mshr_outputs[i].no_offset_addr);
           if (mshr_outputs[i].no_offset_addr == lc_addr_in_reg[PADDR_BITS-1:BLOCK_OFFSET_BITS]) begin
             found = 1;
             pos   = i;

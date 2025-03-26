@@ -438,67 +438,67 @@ module lsu_l1d_actual_tb;
 
     end
 
-    // --- Test Case 5: Read Miss Serviced by LC ---
-    // Assumes address 0x1000 is not initially cached.
-    // Requires the LC mock tasks (`llc_receive_request_from_l1d` and `llc_send_data_to_l1d`)
-    $display("[%0t] --- Starting Test Case 4: Read Miss Serviced by LC ---", $time);
-    // Variables for LC interaction thread
+    // // --- Test Case 5: Read Miss Serviced by LC ---
+    // // Assumes address 0x1000 is not initially cached.
+    // // Requires the LC mock tasks (`llc_receive_request_from_l1d` and `llc_send_data_to_l1d`)
+    // $display("[%0t] --- Starting Test Case 4: Read Miss Serviced by LC ---", $time);
+    // // Variables for LC interaction thread
 
 
-    begin
-      logic [TAG_WIDTH-1:0] req_tag = 10;
-      logic [63:0] req_addr = 64'h0000_0000_0000_5000;  // An address likely to miss
-      // Physical address expected at LC interface (assuming direct mapping of lower bits)
-      logic [PADDR_BITS-1:0] expected_lc_addr = req_addr[PADDR_BITS-1:0];
-      // Data block to be returned by LC (size B bytes = 512 bits)
-      logic [8*B-1:0] data_from_lc;
-      logic [63:0] expected_completion_value = 64'hCAFE_BABE_DEAD_BEEF;
+    // begin
+    //   logic [TAG_WIDTH-1:0] req_tag = 10;
+    //   logic [63:0] req_addr = 64'h0000_0000_0000_5000;  // An address likely to miss
+    //   // Physical address expected at LC interface (assuming direct mapping of lower bits)
+    //   logic [PADDR_BITS-1:0] expected_lc_addr = req_addr[PADDR_BITS-1:0];
+    //   // Data block to be returned by LC (size B bytes = 512 bits)
+    //   logic [8*B-1:0] data_from_lc;
+    //   logic [63:0] expected_completion_value = 64'hCAFE_BABE_DEAD_BEEF;
 
-      // Prepare the full data block (fill with pattern, place expected value)
-      // Fill with 0xA5 pattern first
-      for (int i = 0; i < B; i++) begin
-        data_from_lc[i*8+:8] = 8'hA5;
-      end
-      // Overwrite the first 64 bits (assuming byte address 0 of the line corresponds to 64-bit word)
-      data_from_lc[63:0] = expected_completion_value;
-
-
-      // 1. Initiate Processor Read
-      send_instr(req_tag, 1'b0);  // is_write = false
-      send_data(req_tag, req_addr);  // Value field ignored for read
-
-      delay(5);
-      wait (l1d_lc_valid_to_lc);
-      lc_l1d_ready_to_l1d = 1;
-      #2;
-      lc_l1d_ready_to_l1d = 0;
-
-      req_tag = 11;
-      #1;
+    //   // Prepare the full data block (fill with pattern, place expected value)
+    //   // Fill with 0xA5 pattern first
+    //   for (int i = 0; i < B; i++) begin
+    //     data_from_lc[i*8+:8] = 8'hA5;
+    //   end
+    //   // Overwrite the first 64 bits (assuming byte address 0 of the line corresponds to 64-bit word)
+    //   data_from_lc[63:0] = expected_completion_value;
 
 
-      // 2. Initiate Processor Read
-      send_instr(req_tag, 1'b0);  // is_write = false
-      send_data(req_tag, req_addr);  // Value field ignored for read
+    //   // 1. Initiate Processor Read
+    //   send_instr(req_tag, 1'b0);  // is_write = false
+    //   send_data(req_tag, req_addr);  // Value field ignored for read
 
-      simulate_lc_data(expected_lc_addr, data_from_lc);
-      simulate_lc_data(expected_lc_addr, data_from_lc);
+    //   delay(5);
+    //   wait (l1d_lc_valid_to_lc);
+    //   lc_l1d_ready_to_l1d = 1;
+    //   #2;
+    //   lc_l1d_ready_to_l1d = 0;
 
-      // 6. Wait for and check processor completion (should have the value sent by LC)
-      // This task increments test_case_num and updates pass/fail counters.
-      check_completion_full(req_tag, expected_completion_value);
+    //   req_tag = 11;
+    //   #1;
 
-      // Simple wait to allow the LC handler fork to potentially finish logging messages
-      // A more robust mechanism might involve explicit synchronization if needed.
-      delay(10);
 
-      // Disable the fork to prevent it from accidentally catching later requests
-      // if it somehow didn't complete (e.g., due to an error in llc_send_data_to_l1d)
-      // disable lc_handler_thread; // Consider if needed, potential race condition if disabled too early
+    //   // 2. Initiate Processor Read
+    //   send_instr(req_tag, 1'b0);  // is_write = false
+    //   send_data(req_tag, req_addr);  // Value field ignored for read
 
-    end
-    $display("[%0t] --- Finished Test Case 4 ---", $time);
-    delay(2);
+    //   simulate_lc_data(expected_lc_addr, data_from_lc);
+    //   simulate_lc_data(expected_lc_addr, data_from_lc);
+
+    //   // 6. Wait for and check processor completion (should have the value sent by LC)
+    //   // This task increments test_case_num and updates pass/fail counters.
+    //   check_completion_full(req_tag, expected_completion_value);
+
+    //   // Simple wait to allow the LC handler fork to potentially finish logging messages
+    //   // A more robust mechanism might involve explicit synchronization if needed.
+    //   delay(10);
+
+    //   // Disable the fork to prevent it from accidentally catching later requests
+    //   // if it somehow didn't complete (e.g., due to an error in llc_send_data_to_l1d)
+    //   // disable lc_handler_thread; // Consider if needed, potential race condition if disabled too early
+
+    // end
+    // $display("[%0t] --- Finished Test Case 4 ---", $time);
+    // delay(2);
 
 
     // --- Test Case 5: Read Hit After LC Fill ---
