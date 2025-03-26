@@ -277,9 +277,16 @@ module l1_data_cache_tb;
 
   // Function to run MSHR full test
   task run_mshr_full_test();
-    $display("\n--- Starting MSHR Full Scenarios test ---");
-    $display("  MSHR full scenarios tests are not implemented in this basic testbench.");
-    $display("  Need to add more complex test cases to verify MSHR full handling.");
+    // $display("\n--- Starting MSHR Full Scenarios test ---");
+    // $display("  MSHR full scenarios tests are not implemented in this basic testbench.");
+    // $display("  Need to add more complex test cases to verify MSHR full handling.");
+    $display("running test");
+    read_from_lsu(64'h5000);
+    #50;
+    read_from_lsu(64'h5004);
+    simulate_lc_data({64'h5005}[PADDR_BITS-1:0], 512'hDEADBEEF);
+
+    wait(lsu_valid_out);
   endtask
 
   // Function to run Concurrent LSU and LC accesses test

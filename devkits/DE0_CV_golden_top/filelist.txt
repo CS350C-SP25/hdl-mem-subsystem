@@ -1,0 +1,3 @@
+platform_setup.tcl
+filelist.txt
+DE0_CV_golden_top.v
