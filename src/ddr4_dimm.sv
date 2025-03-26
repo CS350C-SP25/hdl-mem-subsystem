@@ -123,8 +123,8 @@ module ddr4_sdram_chip #(
         logic[COL_BITS-1:0] col_idx;
         logic command_set; // set to high for exactly one cycle when we input a command. command is contained in the command enum;
         BANK_CMDS command;
-        logic [0:0][WIDTH-1:0] write_buffer;
-        logic [0:0][WIDTH-1:0] mask_buffer;
+        //logic [0:0][WIDTH-1:0] write_buffer;
+        //logic [0:0][WIDTH-1:0] mask_buffer;
     } bank_inputs[BANKS];
     struct {
         logic [7:0][WIDTH-1:0] write_buffer;
@@ -156,7 +156,7 @@ module ddr4_sdram_chip #(
                     bank_buffers[i].write_buffer[3],
                     bank_buffers[i].write_buffer[2],
                     bank_buffers[i].write_buffer[1],
-                    bank_inputs[i].write_buffer[0]
+                    bank_buffers[i].write_buffer[0]
                 }),
                 .mask_buffer('{
                     bank_buffers[i].mask_buffer[7],
@@ -166,7 +166,7 @@ module ddr4_sdram_chip #(
                     bank_buffers[i].mask_buffer[3],
                     bank_buffers[i].mask_buffer[2],
                     bank_buffers[i].mask_buffer[1],
-                    bank_inputs[i].mask_buffer[0]
+                    bank_buffers[i].mask_buffer[0]
                 }),
 
                 .dqs_out(dqs)
@@ -234,8 +234,11 @@ module ddr4_sdram_chip #(
         
         else if (start_burst && burst_count == 8) begin
                 burst_count <= 1;
-                bank_inputs[bank_idx].write_buffer[0] <= dqs;
-                bank_inputs[bank_idx].mask_buffer[0] <= dqm_in;
+               // bank_inputs[bank_idx].write_buffer[0] <= dqs;
+               // bank_inputs[bank_idx].mask_buffer[0] <= dqm_in;
+            bank_buffers[bank_idx].write_buffer[0] <= dqs;
+            bank_buffers[bank_idx].mask_buffer[0] <= dqm_in;
+ 
         end
         else if (burst_count < 8) begin
             bank_buffers[bank_idx].write_buffer[burst_count] <= dqs;
@@ -277,16 +280,16 @@ module sdram_bank #(
 
     logic[31:0] cycle_counter;
     logic [WIDTH-1:0] row_buffer[(1 << COL_BITS) - 1:0];
-    logic burst_enabled;
 
     logic read_ready;
-    logic[2:0] burst_current_val;
-    logic[2:0] burst_end_val;
     logic [WIDTH-1:0] next_read;
     logic burst_write;
-    logic burst_end;
+
+    logic burst_start, burst_just_started; // updated from handler
+    logic[2:0] burst_val;
 
 
+    logic[2:0] burst_current_val; // updated from burst ddr loop
 
 
     always_ff @(posedge clk_in) begin
@@ -336,27 +339,25 @@ module sdram_bank #(
                 cycle_counter <= 32'b0;
             end
             else if (cycle_counter == (CAS_LATENCY - 2) && awaiting_write && !awaiting_activation) begin
-                burst_current_val <= 3'b0;
-                burst_end_val <= 3'b111;
+                burst_val <= 3'b0;
+                burst_start <= 1'b1;
                 awaiting_write <= 1'b0;
                 cycle_counter <= 32'b0;
                 burst_write <= 1'b1;
-                burst_end <= 1'b0;
             end
             else if (cycle_counter == (CAS_LATENCY - 2) && awaiting_read && !awaiting_activation) begin
-                burst_current_val <= col_idx[2:0];
-                burst_end_val <= col_idx[2:0] - 1;
-                burst_enabled <= 1'b1;
+                burst_val <= col_idx[2:0];
+                burst_start <= 1'b1;
                 awaiting_read <= 1'b0;
                 burst_write <= 1'b0;
-                burst_end <= 1'b0;
             end
             else if (cycle_counter == (CAS_LATENCY - 2 + 4)) begin
                 cycle_counter <= 32'b0;
-                burst_enabled <= 0;
+                burst_start <= 0;
             end
             else if ((awaiting_activation || awaiting_precharge || awaiting_read || awaiting_write)) begin
                 cycle_counter <= cycle_counter + 32'h01;
+                burst_start <= 0;
             end
         end else begin
             row_active <= 0;
@@ -364,11 +365,9 @@ module sdram_bank #(
             awaiting_precharge <= 0;
             awaiting_read <= 0;
             awaiting_write <= 0;
-            burst_enabled <= 0;
-            burst_end <= 1;
+            burst_start <= 0;
+            burst_val <= 0;
         end
-
-        burst_current_val <= burst_current_val + 1;
     end
 
 
@@ -378,20 +377,38 @@ module sdram_bank #(
                 row_buffer <= bank[row_idx];
         end
 
-        if (!burst_end && rst_N_in) begin
+        if (rst_N_in) begin
+            if (burst_start && !burst_just_started) begin
+                burst_current_val <= burst_val;
+                burst_just_started <= 1;
+
             if (!burst_write) begin
-                next_read <= row_buffer[{col_idx[COL_BITS-1:3], burst_current_val, clk_in}];
+                next_read <= row_buffer[{col_idx[COL_BITS-1:3], burst_val}];
                 // $display("NEXT READ ASSIGNED %x %d %d", next_read, active_row, col_idx);
             end else begin
-                row_buffer[{col_idx[COL_BITS-1:3], burst_current_val, clk_in}] <= (row_buffer[{col_idx[COL_BITS-1:3], burst_current_val, clk_in}] & mask_buffer[{burst_current_val, clk_in}]) | (write_buffer[{burst_current_val, clk_in}] & ~mask_buffer[{burst_current_val, clk_in}]);
+                row_buffer[{col_idx[COL_BITS-1:3], burst_val}] <= (row_buffer[{col_idx[COL_BITS-1:3], burst_val}] & mask_buffer[{burst_val}]) | (write_buffer[{burst_val}] & ~mask_buffer[{burst_val}]);
                 // $display("WRITING %x %x to %d %d", write_buffer[burst_current_val], row_buffer[{col_idx[COL_BITS-1:3], burst_current_val}], active_row, col_idx);
             end
-            if ({burst_current_val, clk_in} == burst_end_val) begin
-                //burst_end <= 1'b1; // TODO: move this to the other thing
+
+            end else begin
+            if (!burst_write) begin
+                next_read <= row_buffer[{col_idx[COL_BITS-1:3], burst_current_val}];
+                // $display("NEXT READ ASSIGNED %x %d %d", next_read, active_row, col_idx);
+            end else begin
+                row_buffer[{col_idx[COL_BITS-1:3], burst_current_val}] <= (row_buffer[{col_idx[COL_BITS-1:3], burst_current_val}] & mask_buffer[{burst_current_val}]) | (write_buffer[{burst_current_val}] & ~mask_buffer[{burst_current_val}]);
+                // $display("WRITING %x %x to %d %d", write_buffer[burst_current_val], row_buffer[{col_idx[COL_BITS-1:3], burst_current_val}], active_row, col_idx);
             end
+            
+
+                burst_current_val <= burst_val + 1;
+            end
+
+            if (!burst_start) burst_just_started <= 0;
+
             read_ready <= 1'b1;
         end else begin
             read_ready <= 1'b0;
+            burst_current_val <= 0;
         end
     end
 
