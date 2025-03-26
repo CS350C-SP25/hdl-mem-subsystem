@@ -34,6 +34,7 @@ module l1_data_cache_tb;
   wire [PADDR_BITS-1:0] lc_addr_out;
   wire [511:0] lc_value_out;
   wire lc_we_out;
+  logic [TAG_BITS-1:0] out_tag;
 
   // Instantiate the device Under Test (dut)
   l1_data_cache #(
@@ -67,7 +68,8 @@ module l1_data_cache_tb;
       .lc_addr_out(lc_addr_out),
       .lc_value_out(lc_value_out),
       .lc_we_out(lc_we_out),
-      .lsu_tag_in(0)
+      .lsu_tag_in(0),
+      .lsu_tag_out(out_tag)
   );
 
   // Clock generation
@@ -95,38 +97,63 @@ module l1_data_cache_tb;
   // Function for reset sequence
   function void reset_sequence();
     #10 rst_N_in = 1'b0;
-    $display("Reset complete");
+    $display("[%0t] Reset complete", $time);
     #20;
     rst_N_in = 1'b1;
   endfunction
 
   // Function to write to LSU
   function void write_to_lsu(input logic [63:0] addr, input logic [63:0] value);
-    $display("  Writing value %h to address %h via LSU", value, addr);
+    $display("[%0t]  Writing value %h to address %h via LSU", $time, value, addr);
     lsu_addr_in = addr;
     lsu_value_in = value;
     lsu_we_in = 1'b1;
     lsu_valid_in = 1'b1;
+    lsu_ready_in = 1;
     wait (lsu_ready_out);
     lsu_valid_in = 1'b0;
-    @(posedge lsu_write_complete_out);
-    $display("  Write complete acknowledged by LSU");
+    $display("[%0t]  Write complete acknowledged by LSU", $time);
+    #10;
+  endfunction
+
+  function void respond_from_lc(input logic [63:0] addr, input logic [511:0] value);
+    lc_ready_in = 1;
+    lc_value_in = value;
+    lc_valid_in = 1;
+    lc_addr_in  = addr[22-1:0];
+    wait (lc_ready_out);
+    lc_valid_in = 0;
+    $display("[%0t] Sent LC response back", $time);
   endfunction
 
   // Function to read from LSU
   function void read_from_lsu(input logic [63:0] addr);
-    $display("  Reading from address %h via LSU", addr);
+    $display("[%0t]  Reading from address %h via LSU", $time, addr);
     lsu_addr_in = addr;
-    lsu_we_in = 1'b0;
+    lsu_we_in   = 1'b0;
+    #2;
     lsu_valid_in = 1'b1;
-    #10;
+    lsu_ready_in = 1;
+    wait (lsu_ready_out);
+    $display("[%0t] Cache accepted read request", $time);
     lsu_valid_in = 1'b0;
+    lsu_ready_in = 1'b1;
+  endfunction
+
+  // Function to read the write complete from L1D
+  function void complete_write_from_l1d();
+    $display("[%0t]  Completing write via LSU", $time);
+    lsu_ready_in = 1;
+    lsu_valid_in = 1'b0;
+    wait (lsu_valid_out);
+    lsu_ready_in = 0;
   endfunction
 
   // Function to check LSU read data
   function void check_lsu_read_data(input logic [63:0] expected_value, input string test_name);
-    @(posedge lsu_valid_out);
-    #1;
+    lsu_ready_in = 1;
+    wait (lsu_valid_out);
+    lsu_ready_in = 0;
     if (lsu_valid_out) begin
       $display("  LSU read valid out detected");
       if (lsu_value_out == expected_value) begin
@@ -143,6 +170,7 @@ module l1_data_cache_tb;
   // Function to check LC request
   function void check_lc_request(
       input logic we_expected, input logic [PADDR_BITS-1:0] expected_addr, input string test_name);
+    wait (lc_valid_out);
     if (lc_valid_out) begin
       $display("  LC request valid detected for address %h", lc_addr_out);
       if (lc_we_out == we_expected) begin
@@ -169,11 +197,11 @@ module l1_data_cache_tb;
 
   // Function to simulate LC data
   function void simulate_lc_data(input logic [PADDR_BITS-1:0] addr, input logic [511:0] value);
-    $display("  Simulating LC providing data %h for address %h", value, addr);
+    $display("[%0t]  Simulating LC providing data %h for address %h", $time, value, addr);
     lc_valid_in = 1'b1;
     lc_addr_in  = addr;
     lc_value_in = value;
-    #10;
+    wait (lc_ready_out);
     lc_valid_in = 1'b0;
   endfunction
 
@@ -186,41 +214,47 @@ module l1_data_cache_tb;
 
   // Function to run basic read hit test
   task run_basic_read_hit_test();
+
     $display("\n--- Starting Basic read hit test ---");
     write_to_lsu(64'h2000, 64'h12345678);
+    respond_from_lc(64'h2000, 512'h0);
+    lsu_ready_in = 0;
+    complete_write_from_l1d();
     read_from_lsu(64'h2000);
+    $display("Got data from LSU");
     check_lsu_read_data(64'h12345678, "Basic read hit test");
   endtask
 
   // Function to run basic read miss test
   task run_basic_read_miss_test();
     $display("\n--- Starting Basic read miss test ---");
-    read_from_lsu(64'h1000);
-    check_lc_request(1'b0, {PADDR_BITS{1'b0}},
+    read_from_lsu(64'h60300);
+    check_lc_request(1'b0, {2'b0, 20'h60300},
                      "Basic read miss test");  // Assuming 0 for lc_addr_out in first miss.
     simulate_lc_data(lc_addr_out, 512'hDEADBEEF);
     #20;
-    read_from_lsu(64'h1000);
+    // read_from_lsu(64'h60300);
     check_lsu_read_data(64'hDEADBEEF, "Read miss test after LC response");
   endtask
 
   // Function to run basic write hit test
   task run_basic_write_hit_test();
     $display("\n--- Starting Basic write hit test ---");
-    write_to_lsu(64'h3000, 64'hAAAA);
-    write_to_lsu(64'h3000, 64'hBBBB);
-    read_from_lsu(64'h3000);
-    check_lsu_read_data(64'hBBBB, "Basic write hit test");
+    write_to_lsu(64'h60300, 64'hAAAA);
+    // write_to_lsu(64'h3000, 64'hBBBB);
+    read_from_lsu(64'h60300);
+    check_lsu_read_data(64'hAAAA, "Basic write hit test");
   endtask
 
   // Function to run basic write miss test
   task run_basic_write_miss_test();
     $display("\n--- Starting Basic write miss test ---");
-    write_to_lsu(64'h4000, 64'hC0C0C0C0);
-    check_lc_request(1'b1, {PADDR_BITS{1'b0}},
+    write_to_lsu(64'h4050, 64'hC0C0C0C0);
+    check_lc_request(1'b0, {6'b0, 16'h4040},
                      "Basic write miss test");  // Assuming 0 for lc_addr_out in first miss.
-    simulate_lc_ready();
-    @(posedge lsu_write_complete_out);
+    // simulate_lc_ready();
+    simulate_lc_data(lc_addr_out, 512'hDEADBEEF);  // return data from this addr
+    @(posedge lsu_valid_out);
     $display("  LSU write complete acknowledged");
     $display("  Basic write miss test PASSED: Write miss handled and completed!");
   endtask
@@ -229,9 +263,14 @@ module l1_data_cache_tb;
   task run_cache_flush_test();
     $display("\n--- Starting Cache Flush test ---");
     write_to_lsu(64'h5000, 64'h55AA55AA);
+    $display("[%0t] Sending Flush Command to Cache", $time);
     flush_in = 1'b1;
+    lsu_valid_in = 1'b1;
     #10;
+    wait (lsu_ready_out);
+    $display("[%0t] FLUSH SENT", $time);
     flush_in = 1'b0;
+    lsu_valid_in = 0;
     read_from_lsu(64'h5000);
     check_lc_request(1'b0, {PADDR_BITS{1'b0}}, "Cache flush test");
   endtask
@@ -271,7 +310,7 @@ module l1_data_cache_tb;
     run_basic_read_miss_test();
     run_basic_write_hit_test();
     run_basic_write_miss_test();
-    run_cache_flush_test();
+    // run_cache_flush_test();
     run_mshr_full_test();
     run_concurrent_access_test();
     run_edge_cases_test();

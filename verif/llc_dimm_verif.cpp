@@ -71,11 +71,14 @@ class TestBench {
         eval();
         if (m_trace) m_trace->dump(10 * m_tickCount + 5);
 
+        // std::cout << "pre tick" <<std::endl;
         m_dut->clk = 1;
         eval();
         if (m_trace) m_trace->dump(10 * m_tickCount + 10);
 
         m_tickCount++;
+        // std::cout << "post tick" <<std::endl;
+
     }
 
     void reset() {
@@ -138,7 +141,7 @@ class TestBench {
     }
 
     // Add a cache line fill operation
-    void cacheFill(uint32_t addr, const uint64_t* line_data) {
+    void cacheFill(uint32_t addr) {
         MemTransaction txn;
         txn.op = CACHE_LINE_FILL;
         txn.addr = addr;
@@ -150,7 +153,7 @@ class TestBench {
         // Update our memory model for the entire cache line (8 words)
         uint32_t aligned_addr = addr & ~0x3FULL;  // Align to 64-byte cache line
         for (int i = 0; i < 8; i++) {
-            m_memoryModel[aligned_addr + i * 8] = line_data[i];
+            m_memoryModel[aligned_addr + i * 8] = addr;
         }
 
         m_pendingTransactions.push_back(txn);
@@ -189,7 +192,7 @@ class TestBench {
 
             switch (txn.op) {
                 case READ:
-                    std::cout << "Reading to addr 0x" << std::hex << txn.addr
+                    std::cout << "[VERIF] Reading to addr 0x" << std::hex << txn.addr
                               << "\n";
                     m_dut->hc_addr_in = txn.addr;
                     m_dut->hc_we_in = 0;
@@ -198,7 +201,7 @@ class TestBench {
                     break;
 
                 case WRITE:
-                    std::cout << "Writing to addr 0x" << std::hex << txn.addr
+                    std::cout << "[VERIF] Writing to addr 0x" << std::hex << txn.addr
                               << "\n";
                     m_dut->hc_addr_in = txn.addr;
                     m_dut->hc_value_in = txn.value;
@@ -208,26 +211,36 @@ class TestBench {
                     break;
 
                 case CACHE_LINE_FILL:
-                    std::cout << "Line fill to addr 0x" << std::hex << txn.addr
+                    std::cout << "[VERIF] Line fill to addr 0x" << std::hex << txn.addr
                               << "\n";
                     m_dut->hc_addr_in = txn.addr;
                     // For simplicity, we're just sending a pattern as cache
                     // line data In a real test, this would be the actual cache
                     // line data
+                    std::cout << "[VERIF] Cache Line: ";
+                    // reset cache line
+                    for (int i = 0; i < 16; i++) {
+                        m_dut->hc_line_in[i] = 0;
+                    }
                     for (int i = 0; i < 8; i++) {
-                        uint64_t word =
-                            m_memoryModel[txn.addr & ~0x3FULL + i * 8];
+                        uint64_t word = m_memoryModel[(txn.addr & ~0x3FULL) + i * 8];
+                        std::cout << "0x" << std::hex << word << " | ";
                         for (int j = 0; j < 64; j++) {
-                            m_dut->hc_line_in[i * 64 + j] = (word >> j) & 0x1;
+                            // Calculate the 32-bit array index and bit position
+                            int array_index = (i * 64 + j) / 32;
+                            int bit_position = (i * 64 + j) % 32;
+                            // Extract the bit and set it in the 32-bit array
+                            m_dut->hc_line_in[array_index] |= (((word >> j) & 0x1) << bit_position);
                         }
                     }
+                    std::cout << "\n";
                     m_dut->hc_we_in = 1;
                     m_dut->hc_cl_in = 1;
                     m_dut->hc_valid_in = 1;
                     break;
 
                 case FLUSH:
-                    std::cout << "Flushing \n";
+                    std::cout << "[VERIF] Flushing \n";
                     m_dut->flush_in = 1;
                     m_dut->hc_valid_in = 1;
                     break;
@@ -311,7 +324,7 @@ class TestBench {
                 for (int j = 0; j < 8; j++) {
                     line_data[j] = randomValue();
                 }
-                cacheFill(addr, line_data);
+                cacheFill(addr);
             } else {
                 // Flush - least frequent
                 flush();
@@ -346,6 +359,42 @@ class TestBench {
             }
         }
 
+    }
+
+    void runRWTest(int num_operations) {
+        uint32_t start_addr = 0x00840; // tag bit is 0x1, set idx is 0x1, etc...
+        for (int i = 0; i < num_operations; i++) {
+            uint32_t set_addr = start_addr + (i * 64) % (1 << 19); // update set idx
+            std::cout << "\n[VERIF]==============Beginning RWTest [" << std::dec << i << "] at address 0x" << std::hex << set_addr << "==============\n";
+            // fill up ways of the set (supposed to be 3 ways but only 2 work bc of flawed pLRU impl...)
+            // the last iteration SHOULD evict 1 way
+            for (int j = 0; j < 3; j++) {
+                if (j >= 2) {
+                    std::cout << "[VERIF] Should be evicting 1 way of the cache right now\n";
+                }
+                uint32_t addr = set_addr + ((j * (1<<13)) % (1 << 19)); // update tag (so that it will be in a different way)
+                uint64_t value = 0xDEADBEEF00000000ULL | j;
+                cacheFill(addr);
+
+                driveInputs();
+
+                // Run simulation for a few cycles
+                for (int k = 0; k < 100; k++) {
+                    tick();
+                }
+            }
+            std::cout << "[VERIF] Should be reading from address 0x" << std::hex << set_addr << "\n";
+            read(set_addr);
+            driveInputs();
+            for (int k = 0; k < 100; k++) {
+                tick();
+            }
+            read(set_addr);
+            driveInputs();
+            for (int k = 0; k < 100; k++) {
+                tick();
+            }
+        }
     }
 
     // Run a stress test with cache thrashing pattern
@@ -401,7 +450,7 @@ class TestBench {
                       << " idle cycles" << std::endl;
         }
 
-        std::cout << "Simulation completed after " << m_tickCount
+        std::cout << "Simulation completed after " << std::dec << m_tickCount
                   << " clock cycles" << std::endl;
     }
 };
@@ -428,8 +477,11 @@ int main(int argc, char** argv) {
     // std::cout << "\nRunning random access test..." << std::endl;
     // tb.runRandomTest(100);
 
-    std::cout << "\nRunning sequential access test..." << std::endl;
-    tb.runSequentialTest(8);
+    // std::cout << "\nRunning sequential access test..." << std::endl;
+    // tb.runSequentialTest(8);
+
+    std::cout << "\nRunning Cache R/W test..." << std::endl;
+    tb.runRWTest(5);
 
     // std::cout << "\nRunning cache thrashing test..." << std::endl;
     // tb.runThrashingTest(30);

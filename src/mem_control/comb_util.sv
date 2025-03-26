@@ -53,7 +53,8 @@ module dimm_to_paddr #(
             row_in, 
             bg_in[BANK_GRP_BITS-1:0], 
             ba_in[BANK_BITS-1:0], 
-            col_in
+            col_in,
+            3'b0
         });
     end
 endmodule
@@ -111,6 +112,61 @@ module mem_req_queue #(
     assign full = (size == QUEUE_SIZE);
     assign empty = (size == 0);
 endmodule: mem_req_queue;
+
+module mshr_queue #(
+    parameter QUEUE_SIZE=16,
+    type mem_request_t = logic // default placeholder
+) (
+    input logic clk_in,
+    input logic rst_in,
+    input logic enqueue_in,
+    input logic dequeue_in,
+    input mem_request_t req_in,
+    input logic [31:0] cycle_count,
+    output mem_request_t req_out,
+    output logic empty,
+    output logic full,
+    output mem_request_t queue_read_only[QUEUE_SIZE-1:0]
+);
+    mem_request_t queue[QUEUE_SIZE-1:0];
+    mem_request_t next_queue[QUEUE_SIZE-1:0];
+    logic [$clog2(QUEUE_SIZE)-1:0] next_head;
+    logic [$clog2(QUEUE_SIZE):0] next_size;
+    logic [$clog2(QUEUE_SIZE)-1:0] head;
+    logic [$clog2(QUEUE_SIZE):0] size;
+    always_ff @(posedge clk_in or posedge rst_in) begin
+        if (rst_in) begin
+            head <= 0;
+            size <= 0;
+        end else begin
+            queue <= next_queue;
+            size <= next_size;
+            head <= next_head;
+        end
+        // $display("Size %d", size);
+    end
+
+    always_comb begin
+        next_queue = queue;
+        next_size = size;
+        next_head = head;
+        
+        if (enqueue_in && !full) begin
+            next_queue[(head + size) % QUEUE_SIZE] = req_in;
+            next_size = size + 1;
+        end
+        if (dequeue_in && !empty) begin
+            next_size = size - 1;
+            next_head = (head + 4'b1) & {$clog2(QUEUE_SIZE){1'b1}}; // % QUEUE_SIZE
+            // $display("dequeuing \n");
+        end
+    end
+    // Full & Empty Flags
+    assign req_out = queue[head];
+    assign full = (size == QUEUE_SIZE);
+    assign empty = (size == 0);
+    assign queue_read_only = queue;
+endmodule: mshr_queue;
 
 // // CLB to assemble commands from scheduler for DIMM
 // module command_clb #(
@@ -324,20 +380,19 @@ module command_sender #(
                 bursting <= 1'b0;
             end
 
-            if (!empty && req_out.cycle_counter + CAS_LATENCY - 1 == cycle_counter) begin
-                read_burst_ready = 1'b1;
-                dequeue_in <= 1'b1;
+            if (!empty && req_out.cycle_counter + CAS_LATENCY == cycle_counter) begin
+                read_bursting = 1'b1;
                 //set the read addy out on next cock cycle
                 paddr_out <= req_out.paddr;
                 read_col_start <= req_out.col;
-            end else begin
-                dequeue_in <= 1'b0;
             end
 
             if (!empty && req_out.cycle_counter + CAS_LATENCY + 3 == cycle_counter) begin
                 act_out <= 1'b1;
+                dequeue_in <= 1'b1;
             end else begin
                 act_out <= 1'b0;
+                dequeue_in <= 1'b0;
             end
             cycle_counter <= cycle_counter + 1;
         end
@@ -351,20 +406,29 @@ module command_sender #(
         if (!rst_N_in) begin
             burst_counter <= '0;
         end else begin
-            if (read_burst_ready) begin
-                read_bursting <= 1'b1;
-            end
-            if (read_bursting) begin
+            if (cmd_in == WRITE && valid_in && !write_bursting) begin
+                // $display("clock edge when i receive valid %x", clk_in);
+                write_bursting <= 1'b1;
+            end if (read_bursting) begin
                 val_out[{(burst_counter + read_col_start)}[2:0]] = mem_bus_value_io;
                 burst_counter <= burst_counter == 7 ? 0 : burst_counter + 1;
-                read_burst_ready = 'b0;
-                read_bursting <= burst_counter != 7;
-            end else if ((cmd_in == WRITE && valid_in) || write_bursting) begin
+                read_bursting = burst_counter != 7;
+                // $display("cmd sender read: %x, idx %d", mem_bus_value_io, {(burst_counter + read_col_start)}[2:0]);
+            end else if (write_bursting) begin
                 burst_counter <= burst_counter == 7 ? 0 : burst_counter + 1;
                 write_bursting <= burst_counter != 7;
+                // $display("cmd sender bursting: %x clk: %b, burst cunter %x", val_in[burst_counter], clk_in, burst_counter);
             end else begin
                 burst_counter <= 'b0;
             end
         end
-        assign mem_bus_value_io = ((cmd_in == WRITE && valid_in) || write_bursting) ? val_in[burst_counter] : {(64){1'bz}};
+        assign mem_bus_value_io = (write_bursting) ? val_in[burst_counter] : {(64){1'bz}};
 endmodule
+
+// if (read_bursting) begin
+//                 val_out[{(burst_counter + read_col_start)}[2:0]] <= mem_bus_value_io;
+//                 burst_counter <= burst_counter == 7 ? 0 : burst_counter + 1;
+//                 read_burst_ready = 'b0;
+//                 read_bursting <= burst_counter != 7;
+//                 $display("cmd sender previous read: %x, idx = %d", val_out[{(burst_counter + read_col_start - 4'b1)}[2:0]], {(burst_counter + read_col_start - 4'b1)}[2:0]);
+//             end
