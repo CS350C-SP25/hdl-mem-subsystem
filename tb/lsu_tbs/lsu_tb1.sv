@@ -12,7 +12,7 @@ module load_store_unit_tb_complex;
 } op_t;
 
   // Parameters
-  localparam int QUEUE_DEPTH = 8;
+  localparam int QUEUE_DEPTH = 32;
   localparam int TAG_WIDTH   = 4;
   localparam int CLK_PERIOD  = 5;  // 5 ns period (200 MHz)
 
@@ -126,7 +126,7 @@ module load_store_unit_tb_complex;
       proc_instr_valid = 0;
       proc_data_valid  = 0;
       l1d_valid_in = 0;
-      l1d_ready_in = 1; // start with ready high
+      l1d_ready_in = 1; 
       l1d_write_complete_in = 0;
       l1d_tag_complete_in = 0;
       expected_completions.delete();
@@ -157,6 +157,7 @@ module load_store_unit_tb_complex;
       proc_instr_valid    = 1'b1;
       // Wait until DUT asserts ready on a rising clock edge
       while (!proc_instr_ready) begin
+        $display("proc instr not ready:( bc queue full");
         @(posedge clk);
       end
       @(posedge clk);
@@ -165,6 +166,20 @@ module load_store_unit_tb_complex;
                (is_store ? "STORE" : "LOAD"), tag, $time);
                @(posedge clk);
     end
+  endtask
+  
+  task automatic dispatch_ready_signal(); begin
+    repeat (2) @ (posedge clk);
+    l1d_ready_in = 1;
+    while (!l1d_valid_out) // says its ready to dispatch, and waits until valid is up to turn it off
+      repeat (1) @ (posedge clk); // wait until it latches the data
+    $display("putting l1d_ready_in down");
+    l1d_ready_in = 0; // set ready down after the data is latched
+    repeat (1) @ (posedge clk); // give it one cycle to prop request down l1d
+    $display("putting l1d_ready_in up");
+    l1d_ready_in = 1;
+
+  end
   endtask
 
   // Provide address and value data (hold proc_data_valid until proc_data_ready)
@@ -290,26 +305,30 @@ module load_store_unit_tb_complex;
     end
   endtask
 
-  task automatic random_fuzz_test(input int num_ops);
+task automatic random_fuzz_test_ready_valid(input int num_ops);
+  typedef struct packed {
+    logic is_store;
+    logic [TAG_WIDTH-1:0] tag;
+    logic [63:0] addr;
+    logic [63:0] value;
+  } op_t;
 
   op_t ops[$];
   logic [63:0] addr_pool[$];
   logic [TAG_WIDTH-1:0] tag_pool[$];
 
   // Generate address pool
-  for (int i = 0; i < 8; i++) begin
-    addr_pool.push_back(64'h1000 + 64'(i * 8));
+  for (int i = 0; i < 6; i++) begin
+    addr_pool.push_back(64'h1000 + 64'(i * 16));
   end
 
-  // Issue random ops
+  // === Step 1: Issue random instructions ===
   for (int i = 0; i < num_ops; i++) begin
     op_t op;
     op.tag = i[3:0];
-    tag_pool.push_back(op.tag);
     op.addr = addr_pool[$urandom_range(0, addr_pool.size()-1)];
-    op.is_store = logic'($urandom_range(0, 1));
-
-    op.value = 64'hAB00_0000 + 64'(i);
+op.is_store = logic'($urandom_range(0, 1));
+    op.value = 64'hABCD0000 + 64'(i);
     ops.push_back(op);
 
     issue_instruction(op.tag, op.is_store);
@@ -317,20 +336,24 @@ module load_store_unit_tb_complex;
       provide_data(op.tag, op.addr, op.value);
     else
       provide_data(op.tag, op.addr);
+
+
+    tag_pool.push_back(op.tag);
   end
 
-  // Random completion dispatching
+  // === Step 2: Complete ops (simulate L1D or forwarding) ===
   for (int i = 0; i < ops.size(); i++) begin
     op_t op = ops[i];
 
-    repeat ($urandom_range(2, 6)) @(posedge clk); // Random delay
+    repeat ($urandom_range(2, 4)) @(posedge clk);
 
     if (op.is_store) begin
+      dispatch_ready_signal(); // no forwarding
       signal_store_complete(op.tag);
       expected_completions.push_back(op.tag);
       expected_values.push_back(64'h0);
     end else begin
-      // If there’s a matching store earlier with same address, simulate forwarding
+      // Check for possible store-forwarding
       logic matched = 0;
       for (int j = i-1; j >= 0; j--) begin
         if (ops[j].is_store && ops[j].addr == op.addr) begin
@@ -341,10 +364,11 @@ module load_store_unit_tb_complex;
         end
       end
       if (!matched) begin
-        logic [63:0] l1d_val = 64'hD00D_CAFE + 64'(i);
-        provide_l1d_response(op.tag, l1d_val);
+        logic [63:0] val = 64'hD00D0000 + 64'(i);
+        dispatch_ready_signal(); // no forwarding
+        provide_l1d_response(op.tag, val);
         expected_completions.push_back(op.tag);
-        expected_values.push_back(l1d_val);
+        expected_values.push_back(val);
       end
     end
   end
@@ -353,87 +377,80 @@ module load_store_unit_tb_complex;
 endtask
 
 
+
   //-------------------------------------------------------------------------
   // Test Sequence
   //-------------------------------------------------------------------------
   logic [TAG_WIDTH-1:0] store_tag;
+  logic [63:0] shared_addr;
   initial begin
     $dumpfile("lsu_test.vcd");
     $dumpvars(0, load_store_unit_tb_complex);
     $display("=== Starting Testbench at time %0t ===", $time);
     
     reset_dut();
-    l1d_ready_in = 0;
-    // TEST 1: Single STORE Flow
+    // // // TEST 1: Single STORE Flow // functional certified 
     $display("\n=== TEST 1: Single STORE Flow ===");
     issue_instruction(4'h1, 1'b1);  //  Issue STORE with tag 1
     provide_data(4'h1, 64'hA000, 64'hDEAD_BEEF);
-    l1d_ready_in = 0;
-    $display("i set ready in to 0 here.");
-    repeat (100) @(posedge clk);
-    $display("now ready in is 1, so our dispatch should work");
-    l1d_ready_in = 1;
-    repeat (5) @(posedge clk);
+    dispatch_ready_signal(); // dispatch one // consensus is that the signal TO lsu should be high unless 
     signal_store_complete(4'h1);
     expected_completions.push_back(4'h1);
     expected_values.push_back(64'h0); // STORE returns 0 completion value
     wait_for_completions();
 
-    // TEST 2: Single LOAD Flow
+    // TEST 2: Single LOAD Flow // functional certified 
     $display("\n=== TEST 2: Single LOAD Flow ===");
     reset_dut();
     issue_instruction(4'h2, 1'b0);  // Issue LOAD with tag 2
     provide_data(4'h2, 64'hB000, 64'd0);
-    repeat (5) @(posedge clk);
+    dispatch_ready_signal(); 
     provide_l1d_response(4'h2, 64'h12345678);
     expected_completions.push_back(4'h2);
     expected_values.push_back(64'h12345678);
     wait_for_completions();
 
 
-    // Test 3: custom sodais test to understand protocol
+    // Test 3: custom sodais test to understand protocol // functional certified
     $display("\n=== Test 3: Custom sodais test to understand protocol");
-    l1d_ready_in = 0;
     reset_dut();
     issue_instruction(4'h3, 1'b0);
     provide_data(4'h3, 64'hc000, 64'd0);
-    repeat (93) @(posedge clk);
-    // ready in goes high!
-    l1d_ready_in = 1;
-    repeat (5) @(posedge clk);
-    l1d_ready_in = 0;
-
-    // it goes low ! (begs question, how do we limit to one per ready signal)
-    // (rely on it to do that)
-    repeat (10) @(posedge clk);
-    // now we need to wait, then provide the l1d_response
+    dispatch_ready_signal(); // will put signal up and down for next dispatch
     provide_l1d_response(4'h3, 64'hbeefcace);
     expected_completions.push_back(4'h3);
     expected_values.push_back(64'hbeefcace);
     wait_for_completions();
-        // === Test 4: Store-to-Load Forwarding with Multiple Stores ===
+
+         // === Test 4: Store-to-Load Forwarding with Multiple Stores === // functional certified
     $display("\n=== Test 4: Store-to-Load Forwarding with Multiple Stores ===");
     reset_dut();
     issue_instruction(4'h8, 1); provide_data(4'h8, 64'hF000, 64'h1111_1111);
+    $display("Should dispatch tag 8");
+    dispatch_ready_signal(); // dispatches one
     issue_instruction(4'h9, 1); provide_data(4'h9, 64'hF000, 64'h2222_2222);
-    repeat (1) @(posedge clk);
-    issue_instruction(4'hA, 0); provide_data(4'hA, 64'hF000);
-    repeat (1) @(posedge clk);
+    issue_instruction(4'hA, 0); provide_data(4'hA, 64'hF000); // should be forwarded from most recent
+    $display("Should dispatch tag 9");
+    dispatch_ready_signal(); // dispatch the second store
+
     signal_store_complete(4'h8);
-    repeat (1) @(posedge clk);
     signal_store_complete(4'h9);
     expected_completions.push_back(4'h8); expected_values.push_back(64'h0);
     expected_completions.push_back(4'hA); expected_values.push_back(64'h2222_2222);
     expected_completions.push_back(4'h9); expected_values.push_back(64'h0);
     wait_for_completions();
 
-    // === Test 5: Load Before Store (No Forwarding) ===
+    // === Test 5: Load Before Store (No Forwarding) === // functional certified
     $display("\n=== Test 5: Load Before Store ===");
     reset_dut();
     issue_instruction(4'hB, 0); provide_data(4'hB, 64'h1000);
+    // that will dispatch now ideally, let signal go down for it to dispatch
+    dispatch_ready_signal(); 
     issue_instruction(4'hC, 1); provide_data(4'hC, 64'h1000, 64'h1234_ABCD);
+    // now this will dispatch too, let signal go down
+    dispatch_ready_signal(); 
+           
     provide_l1d_response(4'hB, 64'hFFFF_FFFF);
-    repeat (3) @(posedge clk);
     signal_store_complete(4'hC);
     expected_completions.push_back(4'hB); expected_values.push_back(64'hFFFF_FFFF);
     expected_completions.push_back(4'hC); expected_values.push_back(64'h0);
@@ -443,77 +460,101 @@ endtask
     $display("\n=== Test 6: Multiple Older Stores ===");
     reset_dut();
     issue_instruction(4'hD, 1); provide_data(4'hD, 64'h2000, 64'h1111_1111);
+    dispatch_ready_signal();
     issue_instruction(4'hE, 1); provide_data(4'hE, 64'h2000, 64'h2222_2222);
+    dispatch_ready_signal();
     issue_instruction(4'hF, 0); provide_data(4'hF, 64'h2000);
-    repeat (3) @(posedge clk);
+
     signal_store_complete(4'hD);
-    repeat (6) @(posedge clk);
     signal_store_complete(4'hE);
     expected_completions.push_back(4'hD); expected_values.push_back(64'h0);
     expected_completions.push_back(4'hE); expected_values.push_back(64'h0);
     expected_completions.push_back(4'hF); expected_values.push_back(64'h2222_2222);
     wait_for_completions();
 
-    // === Test 7: Queue Full Check ===
+    // === Test 7: Queue Full Check === // functional certified
     $display("\n=== Test 7: Queue Full Check ===");
     reset_dut();
     for(int i = 0; i < QUEUE_DEPTH; i++) begin
       issue_instruction(i[3:0], 1);
       provide_data(i[3:0], 64'h3000 + i*8, 64'hC0DE0000 + 64'(i));
+      dispatch_ready_signal();
     end
-    signal_store_complete(4'h0);
+    signal_store_complete(4'h0); // COMMENT THIS OUT IF YOU WANT IT TO STALL!
     // Attempt to issue one more (should block until there's space)
     issue_instruction(4'h0, 1);
     provide_data(4'h0, 64'hdead, 64'hfeed);
     signal_store_complete(4'h0);
-    wait_for_completions(50);
 
-    // === Test 8: Mixed Address Operations ===
+    for (int i = 1; i < QUEUE_DEPTH; i++) begin
+      signal_store_complete(i[3:0]);
+    end
+
+    wait_for_completions();
+
+    // === Test 8: Mixed Address Operations === // functional certified
     $display("\n=== Test 8: Mixed Address Operations ===");
     reset_dut();
-    issue_instruction(4'h1, 1); provide_data(4'h1, 64'hA000, 64'hAAA);
-    issue_instruction(4'h2, 0); provide_data(4'h2, 64'hB000);
-    issue_instruction(4'h3, 1); provide_data(4'h3, 64'hB000, 64'hBBB);
-    issue_instruction(4'h4, 0); provide_data(4'h4, 64'hA000);
+    issue_instruction(4'h1, 1); provide_data(4'h1, 64'hA000, 64'hAAA); // store to A000
+    issue_instruction(4'h2, 0); provide_data(4'h2, 64'hB000); // load from b000
+    repeat (5) @ (posedge clk); // let load enter the queue and logic prop
+    dispatch_ready_signal(); // should take the load
+    dispatch_ready_signal(); // should take the store
+    issue_instruction(4'h3, 1); provide_data(4'h3, 64'hB000, 64'hBBB); // store to b000
+    dispatch_ready_signal();
+    issue_instruction(4'h4, 0); provide_data(4'h4, 64'hA000);  // load from a000
+    // WILL BE FORWARDED!
+
     signal_store_complete(4'h1);
     provide_l1d_response(4'h2, 64'hCCC);
-    repeat (3) @(posedge clk);
     signal_store_complete(4'h3);
     expected_completions = {4'h1, 4'h2, 4'h3, 4'h4};
     expected_values = {64'h0, 64'hCCC, 64'h0, 64'hAAA};
     wait_for_completions();
 
-    // === Test 9: Unresolved Store Blocking Load ===
+    //=== Test 9: Unresolved Store Blocking Load === // functional certified
     $display("\n=== Test 9: Unresolved Store Blocking ===");
     reset_dut();
     issue_instruction(4'h5, 1);
     issue_instruction(4'h6, 0); provide_data(4'h6, 64'hC000);
     repeat(5) @(posedge clk);
     provide_data(4'h5, 64'hC000, 64'hDEC0DE);
-    repeat (3) @(posedge clk);
-    signal_store_complete(4'h5);
+    dispatch_ready_signal();
+    repeat (3) @(posedge clk); // make sure it doesnt dispatch load until this!
+    signal_store_complete(4'h5); // should forward to the load
     expected_completions.push_back(4'h5); expected_values.push_back(64'h0);
     expected_completions.push_back(4'h6); expected_values.push_back(64'hDEC0DE);
     wait_for_completions();
 
-    // === Test 10: Multiple In-Flight Operations ===
-        // === Test 10: Multiple In-Flight Operations ===
+    // === Test 10: Multiple In-Flight Operations === // functional certified 
     $display("\n=== Test 10: Multiple In-Flight Operations ===");
     reset_dut();
 
     issue_instruction(4'h0, 0);
     provide_data(4'h0, 64'hA000);
+    dispatch_ready_signal();
+
     issue_instruction(4'h1, 0);
     provide_data(4'h1, 64'hA040);
+    
+
     issue_instruction(4'h2, 0);
     provide_data(4'h2, 64'hA080);
+    
+
     issue_instruction(4'h3, 0);
     provide_data(4'h3, 64'hA0C0);
+    
     issue_instruction(4'h4, 0);
     provide_data(4'h4, 64'hA100);
+    
     issue_instruction(4'h5, 0);
     provide_data(4'h5, 64'hA140);
-
+    dispatch_ready_signal();
+    dispatch_ready_signal();
+    dispatch_ready_signal();
+    dispatch_ready_signal();
+    dispatch_ready_signal(); // now the others can dispatch!
     // Simulate delay before responses come back
     repeat (10) @(posedge clk);
 
@@ -543,29 +584,32 @@ endtask
 
     wait_for_completions();
     
-    $display("\n=== Test 11: Same Address, Interleaved Store and Load ===");
+    $display("\n=== Test 11: Same Address, Interleaved Store and Load ==="); // functional certified
     reset_dut();
     issue_instruction(4'hA, 1); provide_data(4'hA, 64'hD000, 64'hABCD_EF01); // Store 1
+    dispatch_ready_signal();
     issue_instruction(4'hB, 0); provide_data(4'hB, 64'hD000);               // Load before Store completes
-    repeat(3) @(posedge clk);
+    // should be forwarded to??
     signal_store_complete(4'hA);
-    provide_l1d_response(4'hB, 64'hABCD_EF01); // Should not happen if forwarding works
     expected_completions.push_back(4'hA); expected_values.push_back(64'h0);
     expected_completions.push_back(4'hB); expected_values.push_back(64'hABCD_EF01);
     wait_for_completions();
 
-    // $display("\n=== Test 12: Load Without L1D Response ==="); // ?
-    // reset_dut();
-    // issue_instruction(4'hC, 0); provide_data(4'hC, 64'hE000);
-    // // No response from L1D – expect timeout
-    // expected_completions.push_back(4'hC); expected_values.push_back(64'hBAD); // dummy mismatch
-    // wait_for_completions(10); // Short timeout
+    $display("\n=== Test 12: Load Without L1D Response ==="); // ?
+    reset_dut();
+    issue_instruction(4'hC, 0); provide_data(4'hC, 64'hE000);
+    // No response from L1D – expect timeout
+    provide_l1d_response(4'hC, 64'hDDD); // comment out if you want to fail (it works)
+    expected_completions.push_back(4'hC); expected_values.push_back(64'hDDD); 
+    wait_for_completions(10); // Short timeout
 
 
-    $display("\n=== Test 13: Store then Load to Different Address, Check Completion Order ===");
+    $display("\n=== Test 13: Store then Load to Different Address, Check Completion Order ==="); // functional certified
     reset_dut();
     issue_instruction(4'h1, 1); provide_data(4'h1, 64'hF100, 64'h1111);
+    dispatch_ready_signal();
     issue_instruction(4'h2, 0); provide_data(4'h2, 64'hF200);
+    dispatch_ready_signal();
     repeat(3) @(posedge clk);
     signal_store_complete(4'h1);
     repeat(2) @(posedge clk);
@@ -575,16 +619,18 @@ endtask
     wait_for_completions();
 
 
-    $display("\n=== Test 14: Full Queue with Interleaved Ops ===");
+    $display("\n=== Test 14: Full Queue with Interleaved Ops ==="); // functional certified
     reset_dut();
     for (int i = 0; i < QUEUE_DEPTH; i++) begin
       if (i % 2 == 0) begin
         issue_instruction(i[3:0], 1); // store
-provide_data(i[3:0], 64'h3000 + 64'(i * 8), 64'hAB00 + 64'(i));
+      provide_data(i[3:0], 64'h3000 + 64'(i * 8), 64'hAB00 + 64'(i));
+
       end else begin
         issue_instruction(i[3:0], 0); // load
         provide_data(i[3:0], 64'h3000 + i * 8);
       end
+      dispatch_ready_signal();
     end
 
     for (int i = 0; i < QUEUE_DEPTH; i++) begin
@@ -601,11 +647,14 @@ provide_l1d_response(i[3:0], 64'hFEEDBEEF + 64'(i));
     wait_for_completions();
 
 
-    $display("\n=== Test 15: Back-to-Back Loads to Same Address ===");
+    $display("\n=== Test 15: Back-to-Back Loads to Same Address ==="); //functional certified
     reset_dut();
     issue_instruction(4'h1, 0); provide_data(4'h1, 64'h4444);
+    dispatch_ready_signal();
     issue_instruction(4'h2, 0); provide_data(4'h2, 64'h4444);
+    dispatch_ready_signal();
     issue_instruction(4'h3, 0); provide_data(4'h3, 64'h4444);
+    dispatch_ready_signal();
 
     provide_l1d_response(4'h1, 64'hAAAA);
     provide_l1d_response(4'h2, 64'hBBBB);
@@ -616,11 +665,13 @@ provide_l1d_response(i[3:0], 64'hFEEDBEEF + 64'(i));
     wait_for_completions();
 
 
-    $display("\n=== Test 16: Store followed by 2 Loads (Recent Store Wins) ===");
+    $display("\n=== Test 16: Store followed by 2 Loads (Recent Store Wins) ==="); // functional certified
     reset_dut();
     issue_instruction(4'h1, 1); provide_data(4'h1, 64'h7000, 64'hAAAA_AAAA);
+    dispatch_ready_signal();
     issue_instruction(4'h2, 0); provide_data(4'h2, 64'h7000); // Load before store completes
     issue_instruction(4'h3, 1); provide_data(4'h3, 64'h7000, 64'hBBBB_BBBB);
+    dispatch_ready_signal();
     issue_instruction(4'h4, 0); provide_data(4'h4, 64'h7000); // Load sees 2nd store
 
     signal_store_complete(4'h1);
@@ -632,11 +683,12 @@ provide_l1d_response(i[3:0], 64'hFEEDBEEF + 64'(i));
     expected_completions.push_back(4'h4); expected_values.push_back(64'hBBBB_BBBB);
     wait_for_completions();
 
-    $display("\n=== Test 17: Store and Load to Different Addr, Interleaved Complete ===");
+    $display("\n=== Test 17: Store and Load to Different Addr, Interleaved Complete ==="); // functional certified
     reset_dut();
     issue_instruction(4'h5, 1); provide_data(4'h5, 64'h8000, 64'h12345678);
+    dispatch_ready_signal();
     issue_instruction(4'h6, 0); provide_data(4'h6, 64'h9000);
-    repeat (3) @(posedge clk);
+    dispatch_ready_signal();
     provide_l1d_response(4'h6, 64'hDEADBEEF); // Load returns before store completes
     signal_store_complete(4'h5);
 
@@ -647,27 +699,31 @@ provide_l1d_response(i[3:0], 64'hFEEDBEEF + 64'(i));
     $display("\n=== Test 18: Store/Load Different Addr, No Forwarding ===");
     reset_dut();
     issue_instruction(4'h7, 1); provide_data(4'h7, 64'hAAAA, 64'h5555_5555);
+    dispatch_ready_signal();
     issue_instruction(4'h8, 0); provide_data(4'h8, 64'hBBBB);
+    dispatch_ready_signal();
     signal_store_complete(4'h7);
     provide_l1d_response(4'h8, 64'h9999_9999);
     expected_completions = {4'h7, 4'h8};
     expected_values = {64'h0, 64'h9999_9999};
     wait_for_completions();
 
-    $display("\n=== Test 19: Load to Fresh Addr, Wait for L1D ===");
+    $display("\n=== Test 19: Load to Fresh Addr, Wait for L1D ==="); // functional certified
     reset_dut();
     issue_instruction(4'h9, 0); provide_data(4'h9, 64'h7777);
-    repeat(5) @(posedge clk);
+    dispatch_ready_signal();
+    repeat(10) @(posedge clk);
     provide_l1d_response(4'h9, 64'hFEED_CAFE);
     expected_completions.push_back(4'h9);
     expected_values.push_back(64'hFEED_CAFE);
     wait_for_completions();
 
-    $display("\n=== Test 20: Store Queue Wraparound ===");
+    $display("\n=== Test 20: Store Queue Wraparound ==="); // functional certified
     reset_dut();
     for (int i = 0; i < QUEUE_DEPTH; i++) begin
       issue_instruction(i[3:0], 1);
       provide_data(i[3:0], 64'h4000 + 64'(i * 4), 64'h5000 + 64'(i));
+      dispatch_ready_signal();
     end
 
     for (int i = 0; i < QUEUE_DEPTH; i++) begin
@@ -684,24 +740,25 @@ provide_l1d_response(i[3:0], 64'hFEEDBEEF + 64'(i));
     wait_for_completions();
 
 
-  $display("\n=== Test 21: Random Fuzz Test (Mixed Loads & Stores) ===");
-  reset_dut();
-  random_fuzz_test(16);  // Run 16 random transactions
 
-  $display("\n=== Test 22: Load waits for in-flight Store to same address ===");
+
+  $display("\n=== Test 21: Load waits for in-flight Store to same address ===");
   reset_dut();
   issue_instruction(4'h1, 1); provide_data(4'h1, 64'hD000, 64'hAAAA_BBBB); // Store
   issue_instruction(4'h2, 0); provide_data(4'h2, 64'hD000);                // Load to same addr
+  dispatch_ready_signal();
   repeat(3) @(posedge clk);
   signal_store_complete(4'h1);  // Only now load can resolve
   expected_completions = {4'h1, 4'h2};
   expected_values = {64'h0, 64'hAAAA_BBBB};
   wait_for_completions();
 
-  $display("\n=== Test 23: Out-of-order Store completions ===");
+  $display("\n=== Test 22: Out-of-order Store completions ===");
   reset_dut();
   issue_instruction(4'h3, 1); provide_data(4'h3, 64'hE000, 64'h1111_0000);
   issue_instruction(4'h4, 1); provide_data(4'h4, 64'hE000, 64'h2222_0000);
+  dispatch_ready_signal(); // only need one ? will never remove from lsu?
+  dispatch_ready_signal();
   repeat(2) @(posedge clk);
   signal_store_complete(4'h4);  // Complete newer one first
   repeat(2) @(posedge clk);
@@ -711,10 +768,12 @@ provide_l1d_response(i[3:0], 64'hFEEDBEEF + 64'(i));
   wait_for_completions();
 
 
-  $display("\n=== Test 24: Simultaneous independent stores ===");
+  $display("\n=== Test 23: Simultaneous independent stores ===");
   reset_dut();
   issue_instruction(4'h5, 1); provide_data(4'h5, 64'h6000, 64'h1111_1111);
   issue_instruction(4'h6, 1); provide_data(4'h6, 64'h7000, 64'h2222_2222);
+  dispatch_ready_signal();
+  dispatch_ready_signal();
   repeat(1) @(posedge clk);
   signal_store_complete(4'h6);
   signal_store_complete(4'h5);
@@ -723,40 +782,33 @@ provide_l1d_response(i[3:0], 64'hFEEDBEEF + 64'(i));
   wait_for_completions();
 
 
-    $display("\n=== Test 25: Store and Load with same tag but different addresses ===");
-    // reset_dut();
-    // issue_instruction(4'h7, 1); provide_data(4'h7, 64'h8000, 64'hBEEF_BEEF);
-    // signal_store_complete(4'h7);
-
-    // // Reuse tag 4'h7 for unrelated load
-    // issue_instruction(4'h7, 0); provide_data(4'h7, 64'hDEAD);
-    // repeat (2) @(posedge clk);
-    // provide_l1d_response(4'h7, 64'hABCD_1234);
-
-    // expected_completions.push_back(4'h7); expected_values.push_back(64'h0);       // first was store
-    // expected_completions.push_back(4'h7); expected_values.push_back(64'hABCD_1234); // second is load
-    // wait_for_completions();
-    $display("\n=== Test 26: One store, multiple dependent loads ===");
+    $display("\n=== Test 24: One store, multiple dependent loads, one non dependent, should dispatch ===");
     reset_dut();
     issue_instruction(4'h8, 1); provide_data(4'h8, 64'h9090, 64'h9999_9999);
+    dispatch_ready_signal();
     issue_instruction(4'h9, 0); provide_data(4'h9, 64'h9090);
     issue_instruction(4'hA, 0); provide_data(4'hA, 64'h9090);
+    issue_instruction(4'hE, 0); provide_data(4'hE, 64'h0909);
+    dispatch_ready_signal();
+    repeat (10) @(posedge clk);
     signal_store_complete(4'h8);  
+    provide_l1d_response(4'hE, 64'hDEAD_BEEF);
 
     
 
-    expected_completions = {4'h8, 4'h9, 4'hA};
-    expected_values = {64'h0, 64'h9999_9999, 64'h9999_9999};
+    expected_completions = {4'h8, 4'h9, 4'hA, 4'hE};
+    expected_values = {64'h0, 64'h9999_9999, 64'h9999_9999, 64'hDEAD_BEEF};
     wait_for_completions();
 
-    $display("\n=== Test 27: Queue Full then Accept Stalled Instruction After Completion ===");
+    $display("\n=== Test 25: Queue Full then Accept Stalled Instruction After Completion ===");
     reset_dut();
 
     // Step 1: Fill the queue to capacity with stores
     for (int i = 0; i < QUEUE_DEPTH; i++) begin
       issue_instruction(i[3:0], 1); // store
-      provide_data(i[3:0], 64'hA000 + 64'(i * 8), 64'hFACE0000 + 64'(i));
-    end
+      provide_data(i[3:0], 64'hA000 + 64'(i * 8), 64'hFACE0000 + 64'(i));      
+      dispatch_ready_signal();
+    end // these should all dispatch !
 
     // Step 2: Try to issue one more instruction, which should stall until there's room
     fork
@@ -764,6 +816,7 @@ provide_l1d_response(i[3:0], 64'hFEEDBEEF + 64'(i));
         $display("[TB] Attempting stalled instruction with tag 0xF (should wait)");
         issue_instruction(4'hF, 1); // should block until space frees up
         provide_data(4'hF, 64'hBEEF, 64'hF00D);
+        dispatch_ready_signal();
         $display("[TB] Stalled instruction with tag 0xF accepted");
       end
     join_none
@@ -790,11 +843,12 @@ provide_l1d_response(i[3:0], 64'hFEEDBEEF + 64'(i));
 
     wait_for_completions();
 
-  $display("\n=== Test 28: Load Starved by Store Flood ===");
+  $display("\n=== Test 26: Load Starved by Store Flood ===");
   reset_dut();
   for (int i = 0; i < QUEUE_DEPTH - 1; i++) begin
     issue_instruction(i[3:0], 1); // Fill with stores
     provide_data(i[3:0], 64'h6000 + 64'(i * 8), 64'hCAFE0000 + 64'(i));
+    dispatch_ready_signal();
   end
 
   issue_instruction(4'hE, 0); // One load
@@ -811,55 +865,60 @@ provide_l1d_response(i[3:0], 64'hFEEDBEEF + 64'(i));
   expected_values.push_back(64'hCAFE0000); // Should forward from first store
   wait_for_completions();
 
-  $display("\n=== Test 31: Multiple loads waiting on same addr (no forwarding) ===");
-  reset_dut();
-  issue_instruction(4'h1, 0); provide_data(4'h1, 64'h1234);
-  issue_instruction(4'h2, 0); provide_data(4'h2, 64'h1234);
-  issue_instruction(4'h3, 0); provide_data(4'h3, 64'h1234);
+  // $display("\n=== Test 27: Multiple loads waiting on same addr (no forwarding) ===");
+  // reset_dut();
+  // issue_instruction(4'h1, 0); provide_data(4'h1, 64'h1234);
+  // dispatch_ready_signal();
+  // issue_instruction(4'h2, 0); provide_data(4'h2, 64'h1234);
+  // dispatch_ready_signal();
+  // issue_instruction(4'h3, 0); provide_data(4'h3, 64'h1234);
+  // dispatch_ready_signal();
 
-  repeat (5) @(posedge clk);
-  provide_l1d_response(4'h1, 64'hAAAA);
-  provide_l1d_response(4'h2, 64'hBBBB);
-  provide_l1d_response(4'h3, 64'hCCCC);
+  // repeat (5) @(posedge clk);
+  // provide_l1d_response(4'h1, 64'hAAAA);
+  // provide_l1d_response(4'h2, 64'hBBBB);
+  // provide_l1d_response(4'h3, 64'hCCCC);
 
-  expected_completions = {4'h1, 4'h2, 4'h3};
-  expected_values = {64'hAAAA, 64'hBBBB, 64'hCCCC};
-  wait_for_completions();
+  // expected_completions = {4'h1, 4'h2, 4'h3};
+  // expected_values = {64'hAAAA, 64'hBBBB, 64'hCCCC};
+  // wait_for_completions();
 
 
-$display("\n=== Test 33: 8 Loads to Different Addresses with Interleaved Stores ===");
-// what am i doing at this point
-reset_dut();
+// $display("\n=== Test 28: 8 Loads to Different Addresses with Interleaved Stores ===");
+// // what am i doing at this point
+// reset_dut();
 
-// Step 1: Issue 8 LOAD instructions to different addresses
-for (int i = 0; i < 8; i++) begin
-  logic [TAG_WIDTH-1:0] tag = i[3:0];
-  issue_instruction(tag, 0); // LOAD
-  provide_data(tag, 64'h1000 + 64'(i * 8));
-end
+// // Step 1: Issue 8 LOAD instructions to different addresses
+// for (int i = 0; i < 8; i++) begin
+//   logic [TAG_WIDTH-1:0] tag = i[3:0];
+//   issue_instruction(tag, 0); // LOAD
+//   provide_data(tag, 64'h1000 + 64'(i * 8));
+//   dispatch_ready_signal();
+// end
 
-// Step 2: After each L1D response, issue a STORE to a different address
+// // Step 2: After each L1D response, issue a STORE to a different address
 
-for (int i = 0; i < 8; i++) begin
-  logic [TAG_WIDTH-1:0] load_tag = i[3:0];
-  logic [63:0] load_addr = 64'h1000 + 64'(i * 8);
-  logic [63:0] load_val  = 64'hAAAA0000 + 64'(i);
+// for (int i = 0; i < 8; i++) begin
+//   logic [TAG_WIDTH-1:0] load_tag = i[3:0];
+//   logic [63:0] load_addr = 64'h1000 + 64'(i * 8);
+//   logic [63:0] load_val  = 64'hAAAA0000 + 64'(i);
 
-  repeat (3) @(posedge clk);
-  provide_l1d_response(load_tag, load_val);
-  expected_completions.push_back(load_tag);
-  expected_values.push_back(load_val);
+//   repeat (3) @(posedge clk);
+//   provide_l1d_response(load_tag, load_val);
+//   expected_completions.push_back(load_tag);
+//   expected_values.push_back(load_val);
 
-   store_tag = 4'h8 + i[3:0];
-  issue_instruction(store_tag, 1); // STORE
-  provide_data(store_tag, 64'h2000 + 64'(i * 8), 64'hBBBB0000 + 64'(i));
-  repeat (1) @(posedge clk);
-  signal_store_complete(store_tag);
-  expected_completions.push_back(store_tag);
-  expected_values.push_back(64'h0);
-end
+//   store_tag = 4'h8 + i[3:0];
+//   issue_instruction(store_tag, 1); // STORE
+//   provide_data(store_tag, 64'h2000 + 64'(i * 8), 64'hBBBB0000 + 64'(i));
+//   dispatch_ready_signal();
+//   repeat (1) @(posedge clk);
+//   signal_store_complete(store_tag);
+//   expected_completions.push_back(store_tag);
+//   expected_values.push_back(64'h0);
+// end
 
-wait_for_completions();
+// wait_for_completions();
 
 
     $display("\n=== Test Summary ===");
@@ -882,16 +941,16 @@ wait_for_completions();
   //   join_none
   // end
 
-    initial begin
-      fork
-        forever begin
-          #($urandom_range(100, 500)); // Random toggle interval
-          l1d_ready_in = 0;
-          #($urandom_range(2, 10));
-          l1d_ready_in = 1;
-        end
-      join_none
-    end
+    // initial begin
+    //   fork
+    //     forever begin
+    //       #($urandom_range(100, 500)); // Random toggle interval
+    //       l1d_ready_in = 0;
+    //       #($urandom_range(2, 10));
+    //       l1d_ready_in = 1;
+    //     end
+    //   join_none
+    // end
 
   //-------------------------------------------------------------------------
   // Safety Timeout

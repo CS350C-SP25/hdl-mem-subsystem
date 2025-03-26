@@ -192,9 +192,9 @@ module lsu_queue #(
     $display("Head: %0d, Tail: %0d, Count: %0d", head_ptr, tail_ptr, count);
     for (int i = 0; i < QUEUE_DEPTH; i++) begin
       if (queue[i].valid) begin
-        $display("Entry[%0d]: Tag=%h, %s, EA_Resolved=%b, Dispatched=%b, Addr=0x%h, Value=0x%h", i,
+        $display("Entry[%0d]: Tag=%h, %s, EA_Resolved=%b, Dispatched=%b, Addr=0x%h, Value=0x%h, Complete=0x%h", i,
                  queue[i].tag, (queue[i].op_type == OP_LOAD) ? "LOAD" : "STORE",
-                 queue[i].ea_resolved, queue[i].dispatched, queue[i].addr, queue[i].value);
+                 queue[i].ea_resolved, queue[i].dispatched, queue[i].addr, queue[i].value, queue[i].complete);
       end
     end
     $display("=====================\n");
@@ -411,19 +411,7 @@ module lsu_queue #(
             end
             queue[i].ea_resolved   <= 1'b1;
             waiting_for_data_count <= waiting_for_data_count - 1;
-            /*
-                        If it's a load:
-                          if an older store has the same EA, get the value, and
-                          return to the processor (lsu control)
-                        If it's a store:
-                          IF there is a younger store w the same EA (no loads inbetween):
-                            I terminate, and go to the lsu control
-                          IF there is a younger load with the same EA
-                            i give that load it's value, and go to lsu control
-
-                        Effectively, in all cases, i must remove it from the queue.
-                        */
-            // Now do immediate forwarding using the local address/data
+          
             if (queue[i].op_type == OP_LOAD) begin
               // forward from older store => pass in load_addr, load_idx, load_tag
               forward_from_older_store(addr_in, i, queue[i].tag);
@@ -441,12 +429,11 @@ module lsu_queue #(
       end
 
       // On completion, mark entry invalid
-      // forwarding to be handled here too. 
-      // what tactics can we employ
-
+      // i should see this
       if (completion_valid_in) begin
-        // $display("LSU Queue: Received completion for tag %h with value 0x%h", completion_tag_in,
-        //          completion_data_in);
+        $display("LSU Queue: Received completion for tag %h with value 0x%h", completion_tag_in,
+                 completion_data_in);
+
         for (int i = 0; i < QUEUE_DEPTH; i++) begin
           if (queue[i].valid && queue[i].dispatched && (queue[i].tag == completion_tag_in)) begin
             // For loads, store the returned data, if needed
@@ -457,16 +444,16 @@ module lsu_queue #(
             queue[i].valid <= 1'b0;
             $display("LSU Queue: Completing %s for tag %h at index %0d",
                      (queue[i].op_type == OP_LOAD) ? "LOAD" : "STORE", queue[i].tag, i);
-            display_queue_status();
 
             break;
           end
         end
+        display_queue_status();
 
       end
 
       // Pop exactly one completed entry each cycle
-      if (count > 0 && !queue[head_ptr].valid) begin
+      if (count > 0 && !queue[head_ptr].valid) begin // edge case?
         head_ptr <= head_ptr + 1'b1;
         count    <= count    - 1'b1;
       end
@@ -515,6 +502,7 @@ endfunction
 
   // Decide if an entry is dispatchable
   function dispatch_kind_e check_dispatchable(int i);
+
     if (!queue[i].valid || !queue[i].ea_resolved || queue[i].dispatched) return DISPATCH_NONE;
 
     if (queue[i].op_type == OP_LOAD) begin
@@ -524,9 +512,9 @@ endfunction
         if (queue[s].valid && (queue[s].op_type == OP_STORE) && is_older(
                 i, s
             ) && !queue[s].complete) begin
-          // if (queue[s].ea_resolved && (queue[s].addr == queue[i].addr)) begin
-          //     return DISPATCH_FORWARD;
-          // end
+          if (queue[s].ea_resolved && (queue[s].addr == queue[i].addr)) begin
+              return DISPATCH_FORWARD;
+          end
           if (!queue[s].ea_resolved) return DISPATCH_NONE;
         end
       end
@@ -536,7 +524,7 @@ endfunction
       for (int j = 0; j < QUEUE_DEPTH; j++) begin
 
         if (j == i) continue;
-        if (queue[j].valid && is_younger(i, j)) begin
+        if (queue[j].valid && is_younger(j, i)) begin
           if (queue[j].op_type == OP_STORE) begin
             if (!queue[j].ea_resolved) return DISPATCH_NONE;
             if (queue[j].addr == queue[i].addr) return DISPATCH_NONE;
@@ -572,8 +560,10 @@ endfunction
 
     // First, search for a load
     for (int k = 0; k < count; k++) begin
+  
       if (queue[idx].valid && queue[idx].ea_resolved && !queue[idx].dispatched &&
                 (queue[idx].op_type == OP_LOAD) && !queue[idx].complete) begin // needed to add complete field to ensure it hasnt been forwarded to
+                $display("made it here");
         dk = check_dispatchable(int'(idx));  // Cast idx to int for function call
         if (dk != DISPATCH_NONE) begin
           candidate_found = 1'b1;
@@ -584,15 +574,18 @@ endfunction
           break;
         end
       end
-      idx = idx + 1'b1;
+      idx = idx + 1'b1; 
     end
 
     // If no load found, search for a store
     if (!candidate_found) begin
+
       idx = head_ptr;
       for (int k = 0; k < count; k++) begin
+        
         if (queue[idx].valid && queue[idx].ea_resolved && !queue[idx].dispatched &&
-                    queue[idx].op_type == OP_STORE && !queue[idx].complete) begin // needed to add complete field to ensure it hasnt been forwarded to
+                    (queue[idx].op_type == OP_STORE) && !queue[idx].complete) begin // needed to add complete field to ensure it hasnt been forwarded to
+
           dk = check_dispatchable(int'(idx));  // Cast idx to int for function call
           if (dk != DISPATCH_NONE) begin
             candidate_found = 1'b1;
@@ -601,8 +594,8 @@ endfunction
             break;
           end
         end
-        idx = (idx + $clog2(QUEUE_DEPTH)'(1)) %
-            $clog2(QUEUE_DEPTH)'(QUEUE_DEPTH);  // Proper width arithmetic
+        idx = idx + 1'b1;
+
       end
     end
   end
@@ -622,8 +615,17 @@ endfunction
       reg_dispatch_tag      <= '0;
     end else begin
       // If we do NOT currently have a valid dispatch, and we found a candidate
-      // then we start a new dispatch
+      // then we start a new dispatch 
+      // reg dispatch valid dependent on what?
+      // dependent on if the memory interface accepted our instruction
+
+      //  $display("head ptr = %d", head_ptr);
+      // $display("candidate found = %d", candidate_found);
+      // $display("dispatch ready in = %d", dispatch_ready_in);
+      //     display_queue_status();
+
       if (!reg_dispatch_valid && candidate_found && dispatch_ready_in) begin
+        // $display("im here, my tag is %d", queue[candidate_index].tag);
         reg_dispatch_valid    <= 1'b1;
         reg_dispatch_is_store <= (queue[candidate_index].op_type == OP_STORE);
         reg_dispatch_addr     <= queue[candidate_index].addr;
@@ -635,12 +637,13 @@ endfunction
           queue[candidate_index].valid <= 1'b0;
         end else begin
           // Mark it as dispatched
+          $display("setting dispatched for tag %d to 1", queue[candidate_index].tag);
           queue[candidate_index].dispatched <= 1'b1;
         end
       end 
             // **Important**: ONLY drop reg_dispatch_valid after the memory interface is "ready" (it latched us)
       else if (reg_dispatch_valid && dispatch_ready_in) begin
-        reg_dispatch_valid <= 1'b0;
+        reg_dispatch_valid <= 1'b0; // this signal might be broken
       end
     end
   end
@@ -729,20 +732,31 @@ always_comb begin
   next_state = curr_state;
   case (curr_state)
     S_IDLE: begin
-      if (dispatch_valid_in)
+      $display("I'm in idle");
+      if (dispatch_valid_in) begin
         next_state = S_DISPATCH;
+        $display("going into dispatch!");
+
+      end
+
     end
 
     S_DISPATCH: begin
       // Remain until L1D asserts ready (to accept our request)
-      if (l1d_ready_in)
+      $display("im in dispatch");
+      if (l1d_ready_in) begin
         next_state = S_WAIT_RESP;
+        $display("going into resp!");
+      end
     end
 
     S_WAIT_RESP: begin
       // Instead of checking l1d_valid_in, wait until l1d_ready_in goes low
-      if (!l1d_ready_in)
+      $display("im waiting for resp");
+      if (!l1d_ready_in) begin
         next_state = S_IDLE;
+        $display("going into idle!");
+      end
     end
 
     default: ;
@@ -758,7 +772,7 @@ always_ff @(posedge clk_in  ) begin
     lat_addr             <= 64'd0;
     lat_value            <= 64'd0;
     lat_tag              <= '0;
-    
+
     l1d_valid_out        <= 1'b0;
     l1d_addr_out         <= 64'd0;
     l1d_value_out        <= 64'd0;
@@ -771,7 +785,9 @@ always_ff @(posedge clk_in  ) begin
     case (curr_state)
       S_IDLE: begin
         l1d_valid_out <= 1'b0;
+        dispatch_ready_out <= 1'b1; // ready for dispatch FROM LSU
         if (dispatch_valid_in) begin
+          $display("dispatch latched");
           // Latch incoming dispatch fields
           lat_is_store <= dispatch_is_store_in;
           lat_addr     <= dispatch_addr_in;
@@ -782,20 +798,25 @@ always_ff @(posedge clk_in  ) begin
 
       S_DISPATCH: begin
         // Drive L1D with our request while L1D is ready
+        dispatch_ready_out <= 1'b0; // Not ready for dispatch from LSU
         l1d_valid_out        <= 1'b1;
         l1d_tag_complete_out  <= 1'b1;
         l1d_addr_out          <= lat_addr;
         l1d_value_out         <= lat_value;
         l1d_we_out            <= lat_is_store;
         // Once L1D asserts its ready, the state machine will move to S_WAIT_RESP
-        if (l1d_ready_in)
-          l1d_valid_out <= 1'b0; // Drop the valid once the handshake completes
+        
       end
 
       S_WAIT_RESP: begin
         // Nothing needed here—the state machine simply waits for l1d_ready_in to drop.
-        l1d_valid_out <= 1'b0;
+        if (!l1d_ready_in ) begin // wait while l1d not ready for another dispatch
+          // put valid down when the ready signal goes low
+          // and move on to next operation
+          l1d_valid_out <= 1'b0;
+        end
       end
+
 
       default: ;
     endcase
@@ -834,7 +855,6 @@ end
 // 5) Dispatch Ready Output
 // ----------------------------------------------------------------
 // The dispatch interface is ready only in the idle state.
-assign dispatch_ready_out = (curr_state == S_IDLE);
 // For convenience, pass through L1D’s ready signal.
 //assign l1d_ready_out = l1d_ready_in; // 
 
@@ -1017,11 +1037,9 @@ module lsu_control #(
         completion_valid_out <= 1'b1;
         completion_value_out <= mem_completion_value;
         completion_tag_out   <= mem_completion_tag;
-
         $display("LSU Control: Completing instruction from MEMORY (tag=%h, value=0x%h)",
                  mem_completion_tag, mem_completion_value);
       end
-      $display("Time: %0t that signal is now: %d", $time, lsu_queue_stall);
     end
   end
 
