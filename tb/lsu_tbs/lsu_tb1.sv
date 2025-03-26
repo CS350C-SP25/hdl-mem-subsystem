@@ -94,7 +94,6 @@ module load_store_unit_tb_complex;
     .l1d_value_in(l1d_value_in),
     .l1d_tag_in(l1d_tag_in),
     .l1d_write_complete_in(l1d_write_complete_in),
-    .l1d_tag_complete_in(l1d_tag_complete_in),
     // L1 Cache (L1D) Interface (outputs)
     .l1d_valid_out(l1d_valid_out),
     .l1d_ready_out(l1d_ready_out),
@@ -842,84 +841,6 @@ provide_l1d_response(i[3:0], 64'hFEEDBEEF + 64'(i));
     expected_values.push_back(64'h0);
 
     wait_for_completions();
-
-  // $display("\n=== Test 26: Load Starved by Store Flood ==="); this tc doesnt work
-  // reset_dut();
-  // for (int i = 0; i < QUEUE_DEPTH - 5; i++) begin
-  //   issue_instruction(i[3:0], 1); // Fill with stores
-  //   provide_data(i[3:0], 64'h6000 + 64'(i * 8), 64'hCAFE0000 + 64'(i));
-  //   dispatch_ready_signal();
-  // end
-
-  // issue_instruction(4'hE, 0); // One load
-  // provide_data(4'hE, 64'h6000); // Same addr as first store
-
-  // // Delay store completions to test if load forwards eventually
-  // repeat (10) @(posedge clk);
-  // for (int i = 0; i < QUEUE_DEPTH - 5; i++) begin
-  //   signal_store_complete(i[3:0]);
-  //   expected_completions.push_back(i[3:0]);
-  //   expected_values.push_back(64'h0);
-    
-  // end
-  // expected_completions.push_back(4'hE);
-  // expected_values.push_back(64'h0); // Should forward from most recent store
-  // wait_for_completions();
-
-  // $display("\n=== Test 27: Multiple loads waiting on same addr (no forwarding) ===");
-  // reset_dut();
-  // issue_instruction(4'h1, 0); provide_data(4'h1, 64'h1234);
-  // dispatch_ready_signal();
-  // issue_instruction(4'h2, 0); provide_data(4'h2, 64'h1234);
-  // dispatch_ready_signal();
-  // issue_instruction(4'h3, 0); provide_data(4'h3, 64'h1234);
-  // dispatch_ready_signal();
-
-  // repeat (5) @(posedge clk);
-  // provide_l1d_response(4'h1, 64'hAAAA);
-  // provide_l1d_response(4'h2, 64'hBBBB);
-  // provide_l1d_response(4'h3, 64'hCCCC);
-
-  // expected_completions = {4'h1, 4'h2, 4'h3};
-  // expected_values = {64'hAAAA, 64'hBBBB, 64'hCCCC};
-  // wait_for_completions();
-
-
-// $display("\n=== Test 28: 8 Loads to Different Addresses with Interleaved Stores ===");
-// // what am i doing at this point
-// reset_dut();
-
-// // Step 1: Issue 8 LOAD instructions to different addresses
-// for (int i = 0; i < 8; i++) begin
-//   logic [TAG_WIDTH-1:0] tag = i[3:0];
-//   issue_instruction(tag, 0); // LOAD
-//   provide_data(tag, 64'h1000 + 64'(i * 8));
-//   dispatch_ready_signal();
-// end
-
-// // Step 2: After each L1D response, issue a STORE to a different address
-
-// for (int i = 0; i < 8; i++) begin
-//   logic [TAG_WIDTH-1:0] load_tag = i[3:0];
-//   logic [63:0] load_addr = 64'h1000 + 64'(i * 8);
-//   logic [63:0] load_val  = 64'hAAAA0000 + 64'(i);
-
-//   repeat (3) @(posedge clk);
-//   provide_l1d_response(load_tag, load_val);
-//   expected_completions.push_back(load_tag);
-//   expected_values.push_back(load_val);
-
-//   store_tag = 4'h8 + i[3:0];
-//   issue_instruction(store_tag, 1); // STORE
-//   provide_data(store_tag, 64'h2000 + 64'(i * 8), 64'hBBBB0000 + 64'(i));
-//   dispatch_ready_signal();
-//   repeat (1) @(posedge clk);
-//   signal_store_complete(store_tag);
-//   expected_completions.push_back(store_tag);
-//   expected_values.push_back(64'h0);
-// end
-
-// wait_for_completions();
 
 
     $display("\n=== Test Summary ===");
