@@ -218,6 +218,7 @@ module l1_data_cache #(
           end
         end
 
+        lsu_tag_out_comb = lsu_tag_in_reg;
 
         wait_comb = 5;
 
@@ -381,8 +382,18 @@ module l1_data_cache #(
       end
 
       CLEAR_MSHR: begin
+        $display("[%0t] Clearing MSHR with size ", $time);
         // TODO: need to dequeu MSHR and complete frfom front to bacl;
-        for (int i = MSHR_COUNT - 1; i >= 0; i--) begin
+        // for (int i = MSHR_COUNT - 1; i >= 0; i--) begin
+        //   // $display("The addr was %h and %h", lc_addr_in_reg[PADDR_BITS-1:BLOCK_OFFSET_BITS],
+        //   //          mshr_outputs[i].no_offset_addr);
+        //   if (mshr_outputs[i].no_offset_addr == lc_addr_in_reg[PADDR_BITS-1:BLOCK_OFFSET_BITS]) begin
+        //     found = 1;
+        //     pos   = i;
+        //   end
+        // end
+
+        for (int i = 0; i < MSHR_COUNT; i++) begin
           // $display("The addr was %h and %h", lc_addr_in_reg[PADDR_BITS-1:BLOCK_OFFSET_BITS],
           //          mshr_outputs[i].no_offset_addr);
           if (mshr_outputs[i].no_offset_addr == lc_addr_in_reg[PADDR_BITS-1:BLOCK_OFFSET_BITS]) begin
