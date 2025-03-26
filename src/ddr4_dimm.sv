@@ -37,20 +37,14 @@ module ddr4_dimm #(
     parameter int COL_BITS = 4,  // log2(COLS)
     parameter int WIDTH = 16,
     parameter int REFRESH_CYCLE = 5120
-    // TODO: Ask, I thought they are supposed to send auto-refresh commands ROW times per 64ms, 
-    // technically, we are supposed to have self-refresh in low power mode (when clock is disabled), 
-    // but are we realistically implementing low power modes in this assignment?
-    //TODO ask about fence posts how does the timeframe work for latency. we want to make sure we are not off by 1. 
-    //our current design lets say gets a read request at rising edge of time t=0, the read data will be on the bus at rising edge of t=22 exactly
 
-    // TODO: do bursting and implement DDR based on that (as far as we understand, doing DDR is dependent on bursting)
 ) (
     // Generic
     input logic clk_in,
     input logic rst_N_in,  // reset FSMs
     input logic cs_N_in,  // chip select. active low
     // SDRAM specific inputs from memory bus
-    input logic cke_in,  // Clock enable TODO: handle
+    input logic cke_in,  // Clock enable 
     // note: addr_in[16:15:14] = { ras_n_in, cas_n_in, we_n_in }
     input logic act_in,  // Activate dram inputs
     input logic [16:0] addr_in,  // row/col. Needs two cycles.
@@ -91,9 +85,6 @@ module ddr4_dimm #(
 
 endmodule : ddr4_dimm
 
-
-// The following modules are provided as suggestions. Change them as you see fit.
-
 module ddr4_sdram_chip #(
     // x16 DRAM. We can read 16b from the row buffer at once, and need four chips for a full read.
     parameter int WIDTH = 16,  // bus width per chip.
@@ -130,9 +121,6 @@ module ddr4_sdram_chip #(
         logic [7:0][WIDTH-1:0] write_buffer;
         logic [7:0][WIDTH-1:0] mask_buffer;
     } bank_buffers[BANKS];
-
-    //logic ras_n_in, cas_n_in, we_n_in;
-	 //assign ras_n_in = addr_in[16], cas_n_in = addr_in[15], we_n_in = addr_in[14];
 	 
     integer burst_count;
 
@@ -211,13 +199,13 @@ module ddr4_sdram_chip #(
             end// Bank Activate (uses row index)
             6'b011000: begin
                 bank_inputs[bank_idx].command <= WRITE;   // Write
-                $display("[DIMM] Writing %d %x", bank_idx, dqs);
+                //$display("[DIMM] Writing %d %x", bank_idx, dqs);
                 start_burst = 1;
             end
             6'b011001:    begin
                 bank_inputs[bank_idx].command <= WRITEPRE;// Write with Auto-precharge
                 start_burst = 1;
-               $display("[DIMM] Writing Pre");
+               //$display("[DIMM] Writing Pre");
             end
             6'b011010:    begin 
                 bank_inputs[bank_idx].command <= READ; 
@@ -313,7 +301,6 @@ module sdram_bank #(
             if (selected) begin
                 case (command)
                     ACTIVATE:begin
-                        //TODO handle double activation on same row AWA will lose data? should we close first etc
                         awaiting_activation <= 1;
                     end
                     PRE:     begin
