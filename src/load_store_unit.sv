@@ -42,7 +42,7 @@ module load_store_unit #(
     output logic [63:0] l1d_addr_out,
     output logic [63:0] l1d_value_out,
     output logic l1d_we_out,
-    output logic l1d_tag_complete_out,
+    output logic [TAG_WIDTH-1:0]l1d_tag_out,
 
     // Completion Interface Outputs
     output logic completion_valid_out,
@@ -89,7 +89,7 @@ module load_store_unit #(
       .l1d_addr_out(l1d_addr_out),
       .l1d_value_out(l1d_value_out),
       .l1d_we_out(l1d_we_out),
-      .l1d_tag_complete_out(l1d_tag_complete_out),
+      .l1d_tag_out(l1d_tag_out),
 
       // Completion Interface Outputs
       .completion_valid_out(completion_valid_out),
@@ -690,7 +690,7 @@ module memory_interface #(
   output logic [63:0]  l1d_addr_out,
   output logic [63:0]  l1d_value_out,
   output logic         l1d_we_out,
-  output logic         l1d_tag_complete_out,
+  output  logic [TAG_WIDTH-1:0] l1d_tag_out,
 
   //=== Completion back to LSU Queue ===
   output logic         completion_valid_out,
@@ -777,7 +777,7 @@ always_ff @(posedge clk_in  ) begin
     l1d_addr_out         <= 64'd0;
     l1d_value_out        <= 64'd0;
     l1d_we_out           <= 1'b0;
-    l1d_tag_complete_out <= 1'b0;
+    l1d_tag_out <= {TAG_WIDTH{1'b0}};
     l1d_ready_out = 1'b0;
   end
   else begin
@@ -800,7 +800,7 @@ always_ff @(posedge clk_in  ) begin
         // Drive L1D with our request while L1D is ready
         dispatch_ready_out <= 1'b0; // Not ready for dispatch from LSU
         l1d_valid_out        <= 1'b1;
-        l1d_tag_complete_out  <= 1'b1;
+        l1d_tag_out  <=  lat_tag;
         l1d_addr_out          <= lat_addr;
         l1d_value_out         <= lat_value;
         l1d_we_out            <= lat_is_store;
@@ -902,7 +902,7 @@ module lsu_control #(
     output logic [63:0] l1d_addr_out,
     output logic [63:0] l1d_value_out,
     output logic l1d_we_out,
-    output logic l1d_tag_complete_out,
+    output logic [TAG_WIDTH-1:0] l1d_tag_out,
 
     // Completion Interface (To Processor)
     output logic completion_valid_out,
@@ -1005,7 +1005,7 @@ module lsu_control #(
       .l1d_addr_out(l1d_addr_out),
       .l1d_value_out(l1d_value_out),
       .l1d_we_out(l1d_we_out),
-      .l1d_tag_complete_out(l1d_tag_complete_out),
+      .l1d_tag_out(l1d_tag_out),
 
       // Completion outputs
       .completion_valid_out(mem_completion_valid),
