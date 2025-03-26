@@ -32,10 +32,10 @@ TODO write this section.
  - the l1d testbench can be built using `make l1d`
 
  ## Load/Store Unit
- TODO write this section.
-  - the lsu ain't even got a testbench pushed 🥀😩
-  - yes it does
+ I would like extra credit on the integration with neighboring modules, specifically with the L1D$, as seen in `lsu_l1d_actual_tb.sv`, which can be ran with `make l1d_lsu`
 
+ You can also run the LSU test cases with `make lsu` from the `lsu_tb1.sv` test bench.
+ 
  ## Extra Credit Features for Grading
  Currently working to integrate all the modules. The DIMM and LLC have been fully integrated. LLC and L1D should work together integrated if you connect the right signals. DIMM can be synthesized on quartus.
 
