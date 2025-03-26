@@ -37,7 +37,7 @@ The last level cache encapsulates a cache and a memory controller that roughly i
 
 We integrate with the LSU and with the LLC independently. Would like extra credit for that. Additionally, we also
 run with the full system integration, though that has limited success. Use `make l1d_lsu` to run the L1d with LSU testbench,
-and `make l1d_llc` for the L1d with LLC testbench. Both should function correctly.
+and `make l1d_llc` for the L1d with LLC testbench. Both should function correctly. Note that the ready valid protocol is used.
 
 ## Load/Store Unit
 
