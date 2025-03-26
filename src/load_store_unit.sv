@@ -76,7 +76,6 @@ module load_store_unit #(
       .l1d_value_in(l1d_value_in),
       .l1d_tag_in(l1d_tag_in),
       .l1d_write_complete_in(l1d_write_complete_in),
-      .l1d_tag_complete_in(l1d_tag_complete_in),
 
       // Processor Handshaking Outputs
       .proc_instr_ready_out(proc_instr_ready_out),
@@ -681,7 +680,6 @@ module memory_interface #(
   input  logic [63:0]  l1d_value_in,
   input  logic [TAG_WIDTH-1:0] l1d_tag_in,
   input  logic         l1d_write_complete_in,
-  input  logic         l1d_tag_complete_in,
 
   //=== L1 Cache Interface (outputs) ===
   output logic         l1d_valid_out,       // Valid request to L1D
@@ -889,7 +887,6 @@ module lsu_control #(
     input logic [63:0] l1d_value_in,
     input logic [TAG_WIDTH-1:0] l1d_tag_in,
     input logic l1d_write_complete_in,
-    input logic l1d_tag_complete_in,
 
     // Processor handshake outputs
     output logic proc_instr_ready_out,
@@ -996,7 +993,6 @@ module lsu_control #(
       .l1d_value_in(l1d_value_in),
       .l1d_tag_in(l1d_tag_in),
       .l1d_write_complete_in(l1d_write_complete_in),
-      .l1d_tag_complete_in(l1d_tag_complete_in),
 
       // L1 Cache outputs
       .l1d_valid_out(l1d_valid_out),

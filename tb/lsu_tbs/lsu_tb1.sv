@@ -94,7 +94,6 @@ module load_store_unit_tb_complex;
     .l1d_value_in(l1d_value_in),
     .l1d_tag_in(l1d_tag_in),
     .l1d_write_complete_in(l1d_write_complete_in),
-    .l1d_tag_complete_in(l1d_tag_complete_in),
     // L1 Cache (L1D) Interface (outputs)
     .l1d_valid_out(l1d_valid_out),
     .l1d_ready_out(l1d_ready_out),
