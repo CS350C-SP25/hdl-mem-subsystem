@@ -9,6 +9,7 @@ DIMM, SDRAM Controller, L1D Cache, to L/S Unit.
 This implementation uses the DDR4 standard. For simplicity, we do not consider rank of chips on the DIMM. 
  - testing DIMM can be done using the verification testbench provided at `verif/dimm_tb2.cpp`
  - the testbench can be built using `make dimm` \[TODO: verify this]
+ - it can be compiled with quartus using `quartus_map --read_settings_files=on --write_settings_files=off mem-subsystem-dimm -c ddr4_dimm`
 
 ## Cache Hiearchy
 The cache hierarchy only consists of l1d and llc. L1 data cache and last level cache encapsulate a basic cache module.
@@ -36,7 +37,7 @@ TODO write this section.
   - yes it does
 
  ## Extra Credit Features for Grading
- Currently working to integrate all the modules. The DIMM and LLC have been fully integrated. LLC and L1D should work together integrated if you connect the right signals. Karmanyaah is working on converting all modules to be synthesized on Quartus. 
+ Currently working to integrate all the modules. The DIMM and LLC have been fully integrated. LLC and L1D should work together integrated if you connect the right signals. DIMM can be synthesized on quartus.
 
 ## ACA DMEM Assignment ideology
 
