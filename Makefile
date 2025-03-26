@@ -36,6 +36,7 @@ LSU_VFLAGS = $(VFLAGS) --top-module load_store_unit_tb_complex
 LLC_DIMM_VFLAGS = $(VFLAGS) --top-module llc_dimm_tb
 L1D_LLC_DIMM_VFLAGS = $(VFLAGS) --top-module l1d_llc_tb
 L1D_LLC_VFLAGS = ${VFLAGS} --top-module l1d_llc_tb
+L1D_LSU_VFLAGS = ${VFLAGS} --top-module l1d_lsu_tb
 
 # Source files
 DIMM_SRCS = --cc src/ddr4_dimm.sv --exe verif/dimm_tb2.cpp
@@ -47,6 +48,7 @@ L1D_SRCS = --cc --timing src/l1_data_cache.sv tb/l1d_tb.sv src/mem_control/comb_
 LSU_SRCS = --cc --timing src/load_store_unit.sv tb/lsu_tbs/lsu_tb1.sv  # still adding more
 LLC_DIMM_SRCS = --cc --timing tb/llc_dimm_tb.sv src/cache.sv src/last_level_cache.sv src/ddr4_dimm.sv src/mem_control/bank_state.sv src/mem_control/comb_util.sv src/mem_control/mem_scheduler.sv src/mem_control/req_queue.sv src/mem_control/auto_refresh.sv --exe verif/llc_dimm_verif.cpp
 L1D_LLC_SRCS = --cc --timing tb/l1d_llc_tb.sv src/cache.sv src/last_level_cache.sv src/l1_data_cache.sv src/mem_control/bank_state.sv src/mem_control/comb_util.sv src/mem_control/mem_scheduler.sv src/mem_control/req_queue.sv src/mem_control/auto_refresh.sv --exe verif/l1d_llc_verif.cpp
+L1D_LSU_SRCS = --cc --timing tb/l1d_lsu_tb.sv src/cache.sv src/load_store_unit.sv src/last_level_cache.sv src/l1_data_cache.sv src/mem_control/bank_state.sv src/mem_control/comb_util.sv src/mem_control/mem_scheduler.sv src/mem_control/req_queue.sv src/mem_control/auto_refresh.sv --exe verif/l1d_lsu_verif.cpp
 
 # Output binaries
 DIMM_BIN = obj_dir/Vddr4_dimm
@@ -58,6 +60,7 @@ L1D_BIN = obj_dir/Vl1_data_cache_tb
 LSU_BIN = obj_dir/Vload_store_unit_tb_complex
 LLC_DIMM_BIN = obj_dir/Vllc_dimm_tb
 L1D_LLC_BIN = obj_dir/Vl1d_llc_tb
+L1D_LSU_BIN = obj_dir/Vl1d_lsu_tb
 
 # Default target (alias for dimm)
 all: dimm
@@ -95,6 +98,9 @@ llc_dimm: clean $(LLC_DIMM_BIN)
 l1d_llc: clean $(L1D_LLC_BIN)
 	./$(L1D_LLC_BIN)
 
+l1d_lsu: clean $(L1D_LSU_BIN)
+	./$(L1D_LSU_BIN)
+
 # Compile with Verilator
 $(DIMM_BIN):
 	$(OBJCACHE) $(VERILATOR) $(DIMM_VFLAGS) $(DIMM_SRCS)
@@ -123,9 +129,12 @@ $(LLC_DIMM_BIN):
 $(L1D_LLC_BIN):
 	$(OBJCACHE) $(VERILATOR) $(L1D_LLC_VFLAGS) $(L1D_LLC_SRCS)
 
+$(L1D_LSU_BIN):
+	$(OBJCACHE) $(VERILATOR) $(L1D_LSU_VFLAGS) $(L1D_LSU_SRCS)
+
 # Clean generated files
 clean:
-	rm -rf obj_dir $(DIMM_BIN) $(SCHEDULER_BIN) $(CACHE_BIN) $(LLC_DIMM_BIN) *.log *.dmp *.vcd
+	rm -rf obj_dir $(DIMM_BIN) $(SCHEDULER_BIN) $(CACHE_BIN) $(LLC_DIMM_BIN) $(L1D_LSU_BIN) *.log *.dmp *.vcd
 
 clean-dimm:
 	rm -rf obj_dir/Vddr4_dimm *.log *.dmp *.vcd
