@@ -42,7 +42,13 @@ module ddr4_dimm #(
     // but are we realistically implementing low power modes in this assignment?
     //TODO ask about fence posts how does the timeframe work for latency. we want to make sure we are not off by 1. 
     //our current design lets say gets a read request at rising edge of time t=0, the read data will be on the bus at rising edge of t=22 exactly
+    // TODO: Ask, I thought they are supposed to send auto-refresh commands ROW times per 64ms, 
+    // technically, we are supposed to have self-refresh in low power mode (when clock is disabled), 
+    // but are we realistically implementing low power modes in this assignment?
+    //TODO ask about fence posts how does the timeframe work for latency. we want to make sure we are not off by 1. 
+    //our current design lets say gets a read request at rising edge of time t=0, the read data will be on the bus at rising edge of t=22 exactly
 
+    // TODO: do bursting and implement DDR based on that (as far as we understand, doing DDR is dependent on bursting)
     // TODO: do bursting and implement DDR based on that (as far as we understand, doing DDR is dependent on bursting)
 ) (
     // Generic
@@ -50,6 +56,7 @@ module ddr4_dimm #(
     input logic rst_N_in,  // reset FSMs
     input logic cs_N_in,  // chip select. active low
     // SDRAM specific inputs from memory bus
+    input logic cke_in,  // Clock enable TODO: handle
     input logic cke_in,  // Clock enable TODO: handle
     // note: addr_in[16:15:14] = { ras_n_in, cas_n_in, we_n_in }
     input logic act_in,  // Activate dram inputs
@@ -59,10 +66,12 @@ module ddr4_dimm #(
     input logic [63:0] dqm_in,  // Data mask in. Set to one to block masks
     // InOut with SDRAM controller
     inout logic [63:0] dqs  // Data ins / outs (from all dram chips)
+    inout logic [63:0] dqs  // Data ins / outs (from all dram chips)
 );
     localparam NUM_CHIPS = 64/WIDTH;
     // Process these signals and return the correct data to the LLC
     generate
+        for (genvar i = 0; i < NUM_CHIPS; i ++) begin
         for (genvar i = 0; i < NUM_CHIPS; i ++) begin
             ddr4_sdram_chip 
             #(
@@ -86,11 +95,17 @@ module ddr4_dimm #(
             );            READPRE: begin
                 
             end      
+            );            READPRE: begin
+                
+            end      
 
         end
     endgenerate
 
 endmodule : ddr4_dimm
+
+
+// The following modules are provided as suggestions. Change them as you see fit.
 
 
 // The following modules are provided as suggestions. Change them as you see fit.
@@ -117,6 +132,7 @@ module ddr4_sdram_chip #(
     input logic [WIDTH-1:0] dqm_in,  // Data mask in. Set to one to block masks
     // InOut with SDRAM controller
     inout logic [WIDTH-1:0] dqs  // Data in / out
+    inout logic [WIDTH-1:0] dqs  // Data in / out
 );
 
     struct {
@@ -126,6 +142,8 @@ module ddr4_sdram_chip #(
         BANK_CMDS command;
         logic [0:0][WIDTH-1:0] write_buffer;
         logic [0:0][WIDTH-1:0] mask_buffer;
+        logic [0:0][WIDTH-1:0] write_buffer;
+        logic [0:0][WIDTH-1:0] mask_buffer;
     } bank_inputs[BANKS];
     struct {
         logic [7:0][WIDTH-1:0] write_buffer;
@@ -133,9 +151,12 @@ module ddr4_sdram_chip #(
     } bank_buffers[BANKS];
 
     logic ras_n_in = addr_in[16], cas_n_in = addr_in[15], we_n_in = addr_in[14];
+
+    logic ras_n_in = addr_in[16], cas_n_in = addr_in[15], we_n_in = addr_in[14];
     integer burst_count;
 
     generate
+        for (genvar i = 0; i < BANKS; i++) begin
         for (genvar i = 0; i < BANKS; i++) begin
             sdram_bank  #(.ROW_BITS(ROW_BITS), .COL_BITS(COL_BITS), .WIDTH(WIDTH), .chip_id(id),.bank_id(i))
             chip_bank
@@ -155,6 +176,7 @@ module ddr4_sdram_chip #(
                     bank_buffers[i].write_buffer[2],
                     bank_buffers[i].write_buffer[1],
                     bank_inputs[i].write_buffer[0]
+                    bank_inputs[i].write_buffer[0]
                 }),
                 .mask_buffer('{
                     bank_buffers[i].mask_buffer[7],
@@ -164,6 +186,7 @@ module ddr4_sdram_chip #(
                     bank_buffers[i].mask_buffer[3],
                     bank_buffers[i].mask_buffer[2],
                     bank_buffers[i].mask_buffer[1],
+                    bank_inputs[i].mask_buffer[0]
                     bank_inputs[i].mask_buffer[0]
                 }),
 
@@ -182,6 +205,9 @@ module ddr4_sdram_chip #(
     logic [5:0]command_bits; 
     assign command_bits = {cs_N_in, act_in, addr_in[16], addr_in[15], addr_in[14], addr_in[10]};
     always_ff @ (posedge clk_in) begin
+        if (!rst_N_in) begin
+            burst_count = 8;
+        end
         if (!rst_N_in) begin
             burst_count = 8;
         end
@@ -208,9 +234,17 @@ module ddr4_sdram_chip #(
                 burst_count = 1;
                 bank_inputs[bank_idx].write_buffer[0] <= dqs;
                 bank_inputs[bank_idx].mask_buffer[0] <= dqm_in;
+                $display("[DIMM] Writing %d %x", bank_idx, dqs);
+                burst_count = 1;
+                bank_inputs[bank_idx].write_buffer[0] <= dqs;
+                bank_inputs[bank_idx].mask_buffer[0] <= dqm_in;
             end
             6'b011001:    begin
                 bank_inputs[bank_idx].command <= WRITEPRE;// Write with Auto-precharge
+                burst_count = 1;
+                bank_inputs[bank_idx].write_buffer[0] <= dqs;
+                bank_inputs[bank_idx].mask_buffer[0] <= dqm_in;
+                $display("[DIMM] Writing Pre");
                 burst_count = 1;
                 bank_inputs[bank_idx].write_buffer[0] <= dqs;
                 bank_inputs[bank_idx].mask_buffer[0] <= dqm_in;
@@ -237,6 +271,8 @@ module ddr4_sdram_chip #(
             bank_inputs[bank_idx].col_idx <= COL_BITS'(addr_in);
         end
     end
+    always_ff @ (posedge clk_in or negedge clk_in) begin
+        if (burst_count < 8) begin
     always_ff @ (posedge clk_in or negedge clk_in) begin
         if (burst_count < 8) begin
             bank_buffers[bank_idx].write_buffer[burst_count] <= dqs;
@@ -280,12 +316,16 @@ module sdram_bank #(
     logic[31:0] cycle_counter;
     logic [WIDTH-1:0] row_buffer[(1 << COL_BITS) - 1:0];
     logic burst_enabled;
+    logic burst_enabled;
 
     logic read_ready;
     logic[2:0] burst_current_val;
     logic[2:0] burst_end_val;
+    logic[2:0] burst_current_val;
+    logic[2:0] burst_end_val;
     logic [WIDTH-1:0] next_read;
     logic burst_write;
+    logic burst_end;
     logic burst_end;
 
 
@@ -297,6 +337,7 @@ module sdram_bank #(
             if (selected) begin
                 case (command)
                     ACTIVATE:begin
+                        //TODO handle double activation on same row AWA will lose data? should we close first etc
                         //TODO handle double activation on same row AWA will lose data? should we close first etc
                         awaiting_activation <= 1;
                     end
@@ -328,6 +369,7 @@ module sdram_bank #(
             if (cycle_counter ==  (ACTIVATION_LATENCY - 1) && awaiting_activation) begin
                 row_active <= 1'b1;
                 row_buffer <= bank[row_idx];
+                row_buffer <= bank[row_idx];
                 awaiting_activation <= 1'b0;
                 cycle_counter <= 32'b0;
             end
@@ -340,8 +382,12 @@ module sdram_bank #(
             else if (cycle_counter == (CAS_LATENCY - 2) && awaiting_write && !awaiting_activation) begin
                 burst_current_val = 3'b0;
                 burst_end_val = 3'b111;
+                burst_current_val = 3'b0;
+                burst_end_val = 3'b111;
                 awaiting_write <= 1'b0;
                 cycle_counter <= 32'b0;
+                burst_write = 1'b1;
+                burst_end = 1'b0;
                 burst_write = 1'b1;
                 burst_end = 1'b0;
             end
@@ -349,12 +395,18 @@ module sdram_bank #(
                 burst_current_val = col_idx[2:0];
                 burst_end_val = col_idx[2:0] - 1;
                 burst_enabled = 1'b1;
+                burst_current_val = col_idx[2:0];
+                burst_end_val = col_idx[2:0] - 1;
+                burst_enabled = 1'b1;
                 awaiting_read <= 1'b0;
+                burst_write = 1'b0;
+                burst_end = 1'b0;
                 burst_write = 1'b0;
                 burst_end = 1'b0;
             end
             else if (cycle_counter == (CAS_LATENCY - 2 + 4)) begin
                 cycle_counter <= 32'b0;
+                burst_enabled = 0;
                 burst_enabled = 0;
             end
             else if ((awaiting_activation || awaiting_precharge || awaiting_read || awaiting_write)) begin
@@ -367,8 +419,11 @@ module sdram_bank #(
             awaiting_read <= 0;
             awaiting_write <= 0;
             burst_enabled = 0;
+            burst_enabled = 0;
         end
     end
+    always_ff @(posedge clk_in or negedge clk_in) begin
+        if (!burst_end && rst_N_in) begin
     always_ff @(posedge clk_in or negedge clk_in) begin
         if (!burst_end && rst_N_in) begin
             if (!burst_write) begin
@@ -377,15 +432,20 @@ module sdram_bank #(
                 // $display("NEXT READ ASSIGNED %x %d %d", next_read, active_row, col_idx);
             end else begin
                 row_buffer[{col_idx[COL_BITS-1:3], burst_current_val}] = (row_buffer[{col_idx[COL_BITS-1:3], burst_current_val}] & mask_buffer[burst_current_val]) | (write_buffer[burst_current_val] & ~mask_buffer[burst_current_val]);
+                row_buffer[{col_idx[COL_BITS-1:3], burst_current_val}] = (row_buffer[{col_idx[COL_BITS-1:3], burst_current_val}] & mask_buffer[burst_current_val]) | (write_buffer[burst_current_val] & ~mask_buffer[burst_current_val]);
                 // $display("WRITING %x %x to %d %d", write_buffer[burst_current_val], row_buffer[{col_idx[COL_BITS-1:3], burst_current_val}], active_row, col_idx);
             end
+            if (burst_current_val == burst_end_val) begin
+                burst_end = 1'b1;
             if (burst_current_val == burst_end_val) begin
                 burst_end = 1'b1;
             end
             read_ready <= 1'b1;
             burst_current_val = burst_current_val + 1;
+            burst_current_val = burst_current_val + 1;
         end else begin
             read_ready <= 1'b0;
+            burst_end = 1'b1;
             burst_end = 1'b1;
         end
     end
