@@ -307,6 +307,7 @@ module l1_data_cache_tb;
     run_basic_write_miss_test();
     run_mshr_full_test();
 
+    $display("PASSED ALL TEST CASES");
     $finish;
   end
 
