@@ -15,7 +15,7 @@ const int COL_BITS =4;
 const int BANKS =8;
 const int REFRESH_CYCLE= 5120;
 const int BURST_LOAD =8;
-const vluint64_t max_sim_time= 100; // however many cycles we are taking, this is prob not correct
+const vluint64_t max_sim_time= 1000; // however many cycles we are taking, this is prob not correct
 static Vddr4_dimm* dut;
 uint16_t bank_data [BANKS] [256] [16];
 static VerilatedVcdC* m_trace;
