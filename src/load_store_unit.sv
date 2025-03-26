@@ -208,7 +208,7 @@ module lsu_queue #(
     end else begin
       display_needed <= instr_valid_in && !stall_out;
       if (display_needed) begin
-        display_queue_status();
+        // display_queue_status();
       end
     end
   end
@@ -244,10 +244,10 @@ module lsu_queue #(
 
     // If a closest store was found, perform forwarding
     if (closest_store_idx != -1) begin
-      $display(
-          "Forward: load(tag=%h) idx=%0d from closest older store(tag=%h) idx=%0d with value: %x",
-          load_tag, load_idx, queue[closest_store_idx].tag, closest_store_idx,
-          queue[closest_store_idx].value);
+      // $display(
+      //     "Forward: load(tag=%h) idx=%0d from closest older store(tag=%h) idx=%0d with value: %x",
+      //     load_tag, load_idx, queue[closest_store_idx].tag, closest_store_idx,
+      //     queue[closest_store_idx].value);
 
       // Mark the load as completed with the forwarded value
       queue[load_idx].valid <= 1'b1;  // still valid til we leave:(
@@ -277,8 +277,8 @@ module lsu_queue #(
           end
 
           if (load_between) begin
-            $display("Blocked: Younger store(tag=%h) at idx=%0d exists, but a load is in between.",
-                     store_tag, store_idx);
+            // $display("Blocked: Younger store(tag=%h) at idx=%0d exists, but a load is in between.",
+            //          store_tag, store_idx);
             return;
           end
 
@@ -290,16 +290,16 @@ module lsu_queue #(
 
           // If same address => Forward the value
           if (queue[s].addr == store_addr) begin
-            $display("Forward: younger store(tag=%h) idx=%0d from older store(tag=%h) idx=%0d",
-                     store_tag, store_idx, queue[s].tag, s);
+            // $display("Forward: younger store(tag=%h) idx=%0d from older store(tag=%h) idx=%0d",
+            //          store_tag, store_idx, queue[s].tag, s);
 
             // Forward the value from older store
             queue[store_idx].valid <= 1'b1;
             queue[store_idx].value <= 0;  // Forward store value
             queue[store_idx].complete <= 1'b1;
 
-            $display("LSU: Store tag=%h completed via immediate forwarding from older store",
-                     store_tag);
+            // $display("LSU: Store tag=%h completed via immediate forwarding from older store",
+            //          store_tag);
             break;
           end
         end
@@ -319,10 +319,10 @@ module lsu_queue #(
         // Must be younger in ring buffer
         if (is_younger(l, store_idx)) begin
           if (queue[l].ea_resolved && (queue[l].addr == store_addr) && !queue[l].dispatched) begin
-            $display(
-                "Forward: younger load(tag=%h) idx=%0d from store(tag=%h) => data=0x%h, at index %d",
-                queue[l].tag, l, store_tag, store_data,
-                store_idx);  // this is WRONG. how is it saying it is younger??
+            // $display(
+            //     "Forward: younger load(tag=%h) idx=%0d from store(tag=%h) => data=0x%h, at index %d",
+            //     queue[l].tag, l, store_tag, store_data,
+            //     store_idx);  // this is WRONG. how is it saying it is younger??
 
             // Mark the load done
             queue[l].value <= store_data;
@@ -347,7 +347,7 @@ module lsu_queue #(
       // Iterate through queue to find a completed instruction
       for (int i = 0; i < QUEUE_DEPTH; i++) begin
         if (queue[i].valid && queue[i].complete) begin
-          $display("should see me now");
+          // $display("should see me now");
           // Send the completed instruction to lsu_control
           completion_valid_out  <= 1'b1;
           completion_value_out  <= queue[i].value;
@@ -360,8 +360,8 @@ module lsu_queue #(
             waiting_for_data_count <= waiting_for_data_count - 1;  // ✅ Only decrement if it was waiting for data
           end
           // Display debug message
-          $display("LSU Queue: Returning completed instruction (tag=%h, value=0x%h) to processor",
-                   queue[i].tag, queue[i].value);
+          // $display("LSU Queue: Returning completed instruction (tag=%h, value=0x%h) to processor",
+          //          queue[i].tag, queue[i].value);
 
           break;  // Return only **one** instruction per cycle
         end
@@ -432,8 +432,8 @@ module lsu_queue #(
       // On completion, mark entry invalid
       // i should see this
       if (completion_valid_in) begin
-        $display("LSU Queue: Received completion for tag %h with value 0x%h", completion_tag_in,
-                 completion_data_in);
+        // $display("LSU Queue: Received completion for tag %h with value 0x%h", completion_tag_in,
+        //          completion_data_in);
 
         for (int i = 0; i < QUEUE_DEPTH; i++) begin
           if (queue[i].valid && queue[i].dispatched && (queue[i].tag == completion_tag_in)) begin
@@ -443,13 +443,13 @@ module lsu_queue #(
             end
             // Then free the entry
             queue[i].valid <= 1'b0;
-            $display("LSU Queue: Completing %s for tag %h at index %0d",
-                     (queue[i].op_type == OP_LOAD) ? "LOAD" : "STORE", queue[i].tag, i);
+            // $display("LSU Queue: Completing %s for tag %h at index %0d",
+            //          (queue[i].op_type == OP_LOAD) ? "LOAD" : "STORE", queue[i].tag, i);
 
             break;
           end
         end
-        display_queue_status();
+        // display_queue_status();
 
       end
 
@@ -564,14 +564,14 @@ module lsu_queue #(
 
       if (queue[idx].valid && queue[idx].ea_resolved && !queue[idx].dispatched &&
                 (queue[idx].op_type == OP_LOAD) && !queue[idx].complete) begin // needed to add complete field to ensure it hasnt been forwarded to
-        $display("made it here");
+        // $display("made it here");
         dk = check_dispatchable(int'(idx));  // Cast idx to int for function call
         if (dk != DISPATCH_NONE) begin
           candidate_found = 1'b1;
           candidate_index = int'(idx);  // Cast idx to int for assignment
           candidate_kind  = dk;
-          $display("Time %0t: LSU Queue: Found load for tag %h at index %0d", $time,
-                   queue[idx].tag, idx);
+          // $display("Time %0t: LSU Queue: Found load for tag %h at index %0d", $time,
+          //          queue[idx].tag, idx);
           break;
         end
       end
@@ -638,7 +638,7 @@ module lsu_queue #(
           queue[candidate_index].valid <= 1'b0;
         end else begin
           // Mark it as dispatched
-          $display("setting dispatched for tag %d to 1", queue[candidate_index].tag);
+          // $display("setting dispatched for tag %d to 1", queue[candidate_index].tag);
           queue[candidate_index].dispatched <= 1'b1;
         end
       end 
@@ -733,7 +733,7 @@ module memory_interface #(
         // $display("I'm in idle");
         if (dispatch_valid_in) begin
           next_state = S_DISPATCH;
-          $display("going into dispatch!");
+          // $display("going into dispatch!");
 
         end
 
@@ -741,19 +741,19 @@ module memory_interface #(
 
       S_DISPATCH: begin
         // Remain until L1D asserts ready (to accept our request)
-        $display("im in dispatch");
+        // $display("im in dispatch");
         if (l1d_ready_in) begin
           next_state = S_WAIT_RESP;
-          $display("going into resp!");
+          // $display("going into resp!");
         end
       end
 
       S_WAIT_RESP: begin
         // Instead of checking l1d_valid_in, wait until l1d_ready_in goes low
-        $display("im waiting for resp");
+        // $display("im waiting for resp");
         if (!l1d_ready_in) begin
           next_state = S_IDLE;
-          $display("going into idle!");
+          // $display("going into idle!");
         end
       end
 
@@ -784,7 +784,7 @@ module memory_interface #(
           l1d_valid_out <= 1'b0;
           dispatch_ready_out <= 1'b1;  // ready for dispatch FROM LSU
           if (dispatch_valid_in) begin
-            $display("dispatch latched");
+            // $display("dispatch latched");
             // Latch incoming dispatch fields
             lat_is_store <= dispatch_is_store_in;
             lat_addr     <= dispatch_addr_in;
@@ -1011,17 +1011,17 @@ module lsu_control #(
         completion_value_out <= lsu_queue_completion_value;
         completion_tag_out   <= lsu_queue_completion_tag;
 
-        $display("LSU Control: Completing instruction from QUEUE (tag=%h, value=0x%h)",
-                 lsu_queue_completion_tag, lsu_queue_completion_value);
+        // $display("LSU Control: Completing instruction from QUEUE (tag=%h, value=0x%h)",
+        //          lsu_queue_completion_tag, lsu_queue_completion_value);
 
       end  // If no queue completion, check Memory Interface
       else if (mem_completion_valid) begin
-        $display("in the else if");
+        // $display("in the else if");
         completion_valid_out <= 1'b1;
         completion_value_out <= mem_completion_value;
         completion_tag_out   <= mem_completion_tag;
-        $display("LSU Control: Completing instruction from MEMORY (tag=%h, value=0x%h)",
-                 mem_completion_tag, mem_completion_value);
+        // $display("LSU Control: Completing instruction from MEMORY (tag=%h, value=0x%h)",
+        //          mem_completion_tag, mem_completion_value);
       end
     end
   end

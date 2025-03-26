@@ -190,18 +190,9 @@ module ddr4_sdram_chip #(
         end
         // $display("CMD: %b", command_bits);
         casez (command_bits)
-            6'b01001?:    begin 
-                bank_inputs[bank_idx].command <= REFRESH; 
-                //$display("[DIMM] refresh");
-            end    // Refresh
-            6'b010100:    begin 
-                bank_inputs[bank_idx].command <= PRE;
-                //$display("[DIMM] pre"); 
-            end     // Single Bank Precharge
-            6'b00????:    begin 
-                bank_inputs[bank_idx].command <= ACTIVATE; 
-                //$display("[DIMM] activating");
-            end// Bank Activate (uses row index)
+            6'b01001?:    begin bank_inputs[bank_idx].command <= REFRESH; $display("[DIMM] refresh");end    // Refresh
+            6'b010100:    begin bank_inputs[bank_idx].command <= PRE;$display("[DIMM] pre"); end     // Single Bank Precharge
+            6'b00????:    begin bank_inputs[bank_idx].command <= ACTIVATE; $display("[DIMM] activating");end// Bank Activate (uses row index)
             6'b011000: begin
                 bank_inputs[bank_idx].command <= WRITE;   // Write
                 //$display("[DIMM] Writing %d %x", bank_idx, dqs);
@@ -216,14 +207,8 @@ module ddr4_sdram_chip #(
                 bank_inputs[bank_idx].mask_buffer[0] <= dqm_in;
                 //$display("[DIMM] Writing Pre");
             end
-            6'b011010:    begin 
-                bank_inputs[bank_idx].command <= READ; 
-                //$display("[DIMM] Reading"); 
-            end   // Read
-            6'b011011:    begin 
-                bank_inputs[bank_idx].command <= READPRE; 
-                //$display("[DIMM] Reading Pre"); 
-            end // Read with Auto-Precharge
+            6'b011010:    begin bank_inputs[bank_idx].command <= READ; $display("[DIMM] Reading"); end   // Read
+            6'b011011:    begin bank_inputs[bank_idx].command <= READPRE; $display("[DIMM] Reading Pre"); end // Read with Auto-Precharge
             default: begin
                 bank_inputs[bank_idx].command <= IDLE;
             end

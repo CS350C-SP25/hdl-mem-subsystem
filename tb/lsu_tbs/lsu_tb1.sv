@@ -149,21 +149,21 @@ module load_store_unit_tb_complex;
     input logic is_store
   );
     begin
-      $display("\n[TB] Attempting to ISSUE %s with tag %h at time %0t",
-               (is_store ? "STORE" : "LOAD"), tag, $time);
+      // $display("\n[TB] Attempting to ISSUE %s with tag %h at time %0t",
+      //          (is_store ? "STORE" : "LOAD"), tag, $time);
       proc_instr_tag      = tag;
       proc_instr_is_write = is_store;
       proc_instr_valid    = 1'b1;
       // Wait until DUT asserts ready on a rising clock edge
       while (!proc_instr_ready) begin
-        $display("proc instr not ready:( bc queue full");
+        // $display("proc instr not ready:( bc queue full");
         @(posedge clk);
       end
       @(posedge clk);
       proc_instr_valid = 1'b0;
-      $display("[TB] ISSUED %s with tag %h at time %0t",
-               (is_store ? "STORE" : "LOAD"), tag, $time);
-               @(posedge clk);
+      // $display("[TB] ISSUED %s with tag %h at time %0t",
+      //          (is_store ? "STORE" : "LOAD"), tag, $time);
+      //          @(posedge clk);
     end
   endtask
   
@@ -172,10 +172,10 @@ module load_store_unit_tb_complex;
     l1d_ready_in = 1;
     while (!l1d_valid_out) // says its ready to dispatch, and waits until valid is up to turn it off
       repeat (1) @ (posedge clk); // wait until it latches the data
-    $display("putting l1d_ready_in down");
+    // $display("putting l1d_ready_in down");
     l1d_ready_in = 0; // set ready down after the data is latched
     repeat (1) @ (posedge clk); // give it one cycle to prop request down l1d
-    $display("putting l1d_ready_in up");
+    // $display("putting l1d_ready_in up");
     l1d_ready_in = 1;
 
   end
@@ -188,8 +188,8 @@ module load_store_unit_tb_complex;
     input logic [63:0] value = 64'd0
   );
     begin
-      $display("[TB] Providing DATA for tag %h: addr=0x%h, value=0x%h at time %0t",
-               tag, addr, value, $time);
+      // $display("[TB] Providing DATA for tag %h: addr=0x%h, value=0x%h at time %0t",
+      //          tag, addr, value, $time);
       proc_data_tag = tag;
       proc_addr     = addr;
       proc_value    = value;
@@ -200,7 +200,7 @@ module load_store_unit_tb_complex;
       @(posedge clk);
       proc_data_valid = 1'b0;
       @ (posedge clk);
-      $display("[TB] DATA provided for tag %h at time %0t", tag, $time);
+      // $display("[TB] DATA provided for tag %h at time %0t", tag, $time);
     end
   endtask
 
@@ -214,14 +214,14 @@ module load_store_unit_tb_complex;
     input logic [63:0] value
   );
     begin
-      $display("[TB] L1D: Providing LOAD response for tag %h with value 0x%h at time %0t",
-               tag, value, $time);
+      // $display("[TB] L1D: Providing LOAD response for tag %h with value 0x%h at time %0t",
+      //          tag, value, $time);
       l1d_tag_in          = tag;
       l1d_value_in        = value;
       l1d_tag_complete_in = 1'b1;
       l1d_write_complete_in = 1'b0; // load response
       l1d_valid_in = 1'b1;
-      $display("im stuck here");
+      // $display("im stuck here");
       while (!l1d_ready_out) begin
         @(posedge clk);
       end; // ? does this signal make sense?
@@ -229,7 +229,7 @@ module load_store_unit_tb_complex;
       @(posedge clk);
       l1d_valid_in         = 1'b0;
       l1d_tag_complete_in  = 1'b0;
-      $display("[TB] L1D: LOAD response accepted for tag %h at time %0t", tag, $time);
+      // $display("[TB] L1D: LOAD response accepted for tag %h at time %0t", tag, $time);
       @ (posedge clk);
     end
   endtask
@@ -239,7 +239,7 @@ module load_store_unit_tb_complex;
     input logic [TAG_WIDTH-1:0] tag
   );
     begin
-      $display("[TB] L1D: Signaling STORE completion for tag %h at time %0t", tag, $time);
+      // $display("[TB] L1D: Signaling STORE completion for tag %h at time %0t", tag, $time);
       l1d_tag_in           = tag;
       l1d_write_complete_in = 1'b1;
       l1d_tag_complete_in   = 1'b1;
@@ -251,7 +251,7 @@ module load_store_unit_tb_complex;
       l1d_valid_in         = 1'b0;
       l1d_write_complete_in = 1'b0;
       l1d_tag_complete_in   = 1'b0;
-      $display("[TB] L1D: STORE completion accepted for tag %h at time %0t", tag, $time);
+      // $display("[TB] L1D: STORE completion accepted for tag %h at time %0t", tag, $time);
       @(posedge clk);
     end
   endtask
@@ -263,8 +263,8 @@ module load_store_unit_tb_complex;
     forever begin
       @(posedge clk);
       if (completion_valid) begin
-        $display(">>> COMPLETION: tag=%h, value=0x%h at time %0t",
-                 completion_tag, completion_value, $time);
+        // $display(">>> COMPLETION: tag=%h, value=0x%h at time %0t",
+        //          completion_tag, completion_value, $time);
         completed_tags.push_back(completion_tag);
         completed_values.push_back(completion_value);
       end
@@ -282,12 +282,12 @@ module load_store_unit_tb_complex;
         for (int j = 0; j < expected_completions.size(); j++) begin
           if (completed_tags[i] == expected_completions[j]) begin
             if (completed_values[i] == expected_values[j]) begin
-              $display("[TB] PASS: Tag=%h completed correctly with value 0x%h",
-                       completed_tags[i], completed_values[i]);
+              // $display("[TB] PASS: Tag=%h completed correctly with value 0x%h",
+              //          completed_tags[i], completed_values[i]);
               test_passed++;
             end else begin
-              $display("[TB] FAIL: Tag=%h value mismatch (got=0x%h, expected=0x%h)",
-                       completed_tags[i], completed_values[i], expected_values[j]);
+              // $display("[TB] FAIL: Tag=%h value mismatch (got=0x%h, expected=0x%h)",
+              //          completed_tags[i], completed_values[i], expected_values[j]);
               test_failed++;
             end
             expected_completions.delete(j);
@@ -299,7 +299,7 @@ module load_store_unit_tb_complex;
       end
     end
     if (remaining > 0) begin
-      $display("[TB] TIMEOUT: Still waiting for %0d completions!", remaining);
+      // $display("[TB] TIMEOUT: Still waiting for %0d completions!", remaining);
       test_failed += remaining;
     end
   endtask
@@ -425,11 +425,11 @@ endtask
     $display("\n=== Test 4: Store-to-Load Forwarding with Multiple Stores ===");
     reset_dut();
     issue_instruction(4'h8, 1); provide_data(4'h8, 64'hF000, 64'h1111_1111);
-    $display("Should dispatch tag 8");
+    // $display("Should dispatch tag 8");
     dispatch_ready_signal(); // dispatches one
     issue_instruction(4'h9, 1); provide_data(4'h9, 64'hF000, 64'h2222_2222);
     issue_instruction(4'hA, 0); provide_data(4'hA, 64'hF000); // should be forwarded from most recent
-    $display("Should dispatch tag 9");
+    // $display("Should dispatch tag 9");
     dispatch_ready_signal(); // dispatch the second store
 
     signal_store_complete(4'h8);
@@ -812,11 +812,11 @@ provide_l1d_response(i[3:0], 64'hFEEDBEEF + 64'(i));
     // Step 2: Try to issue one more instruction, which should stall until there's room
     fork
       begin
-        $display("[TB] Attempting stalled instruction with tag 0xF (should wait)");
+        // $display("[TB] Attempting stalled instruction with tag 0xF (should wait)");
         issue_instruction(4'hF, 1); // should block until space frees up
         provide_data(4'hF, 64'hBEEF, 64'hF00D);
         dispatch_ready_signal();
-        $display("[TB] Stalled instruction with tag 0xF accepted");
+        // $display("[TB] Stalled instruction with tag 0xF accepted");
       end
     join_none
 
@@ -879,7 +879,7 @@ provide_l1d_response(i[3:0], 64'hFEEDBEEF + 64'(i));
   //-------------------------------------------------------------------------
   initial begin
     #30000;
-    $display("[TB] TIMEOUT: Forcing simulation stop at time %0t", $time);
+    // $display("[TB] TIMEOUT: Forcing simulation stop at time %0t", $time);
     $stop;
   end
 
