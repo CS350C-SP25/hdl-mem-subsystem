@@ -178,7 +178,7 @@ module lsu_queue #(
   logic [$clog2(QUEUE_DEPTH):0] waiting_for_data_count;
   assign waiting_for_data_out = waiting_for_data_count != 0;
   // ----------------------------------------------------------------
-  // 2) Queue status logic
+  // Queue status logic
   // ----------------------------------------------------------------
   assign full_out = (count == QUEUE_DEPTH[$clog2(QUEUE_DEPTH):0]);
   assign empty_out = (count == '0);
@@ -367,7 +367,7 @@ module lsu_queue #(
   end
 
   // ----------------------------------------------------------------
-  // 3) Enqueue logic
+  // Enqueue logic
   // ----------------------------------------------------------------
   always_ff @(posedge clk_in  ) begin
     if (!rst_N_in) begin
@@ -460,7 +460,7 @@ module lsu_queue #(
   end
 
   // ----------------------------------------------------------------
-  // 4) Dispatch logic
+  // Dispatch logic
   // ----------------------------------------------------------------
   // We'll look for one candidate (load or store) at a time to dispatch.
   // The memory interface can only handle one outstanding transaction.
@@ -712,7 +712,7 @@ logic [63:0]  lat_addr, lat_value;
 logic [TAG_WIDTH-1:0] lat_tag;
 
 // ----------------------------------------------------------------
-// 1) State register
+// State register
 // ----------------------------------------------------------------
 always_ff @(posedge clk_in  ) begin
   if (!rst_N_in)
@@ -722,7 +722,7 @@ always_ff @(posedge clk_in  ) begin
 end
 
 // ----------------------------------------------------------------
-// 2) Next-state logic
+// Next-state logic
 // ----------------------------------------------------------------
 always_comb begin
   // Default: remain in current state
@@ -761,7 +761,7 @@ always_comb begin
 end
 
 // ----------------------------------------------------------------
-// 3) L1D Request Generation & Latching (outputs for dispatch)
+// L1D Request Generation & Latching (outputs for dispatch)
 // ----------------------------------------------------------------
 always_ff @(posedge clk_in  ) begin
   if (!rst_N_in) begin
@@ -821,10 +821,10 @@ always_ff @(posedge clk_in  ) begin
 end
 
 // ----------------------------------------------------------------
-// 4) Completion Generation (separate always_ff block)
+// Completion Generation (separate always_ff block)
 // ----------------------------------------------------------------
-// This block monitors for a valid response (l1d_valid_in) ,
-// and generates the completion handshake accordingly.
+//  monitors for a valid response (l1d_valid_in) ,
+// generates the completion handshake accordingly.
 always_ff @(posedge clk_in  ) begin
   if (!rst_N_in) begin
     completion_valid_out <= 1'b0;
@@ -847,14 +847,6 @@ always_ff @(posedge clk_in  ) begin
     l1d_ready_out = 1'b1;
   end
 end
-
-// ----------------------------------------------------------------
-// 5) Dispatch Ready Output
-// ----------------------------------------------------------------
-// The dispatch interface is ready only in the idle state.
-// For convenience, pass through L1D’s ready signal.
-//assign l1d_ready_out = l1d_ready_in; // 
-
 endmodule
 
 
