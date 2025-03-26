@@ -477,15 +477,15 @@ void L1DLLCTB::tick() {
         evaluateDuts();
 
         // Monitor signals for debugging
-        // if (l1d_lsu_valid_out) {
-        //     std::cout << "Time " << current_time << ": L1D LSU Valid Out: "
-        //               << (l1d_lsu_valid_out ? "1" : "0") << std::endl;
-        // }
+        if (l1d_lsu_valid_out) {
+            std::cout << "Time " << current_time << ": L1D LSU Valid Out: "
+                      << (l1d_lsu_valid_out ? "1" : "0") << std::endl;
+        }
 
-        // if (llc_hc_valid_out) {
-        //     std::cout << "Time " << current_time << ": LLC HC Valid Out: "
-        //               << (llc_hc_valid_out ? "1" : "0") << std::endl;
-        // }
+        if (llc_hc_valid_out) {
+            std::cout << "Time " << current_time << ": LLC HC Valid Out: "
+                      << (llc_hc_valid_out ? "1" : "0") << std::endl;
+        }
     }
 }
 

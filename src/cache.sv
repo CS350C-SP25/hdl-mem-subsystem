@@ -152,6 +152,7 @@ module cache #(
   tag_entry plru_tag;
   tag_entry plru_tag_reg;
   int changed_way;
+  logic flush_complete_reg;
   logic flush_complete;
   logic cur_dirty;
 
@@ -254,16 +255,24 @@ module cache #(
 
     plru_temp = plru_state;
 
+    flush_complete = flush_complete_reg;
+
     case (cur_state)
       IDLE: begin
-        next_state = (lc_valid_reg || hc_valid_reg) ? LOOKUP : IDLE;  // check hit or miss
-        // only 1 direction can be ready at a time
-        if (lc_valid_reg) begin
-          lc_ready_comb = 1;
-          lc_ready_out  = 1;
-        end else if (hc_valid_reg) begin
+        if (flush_reg && !flush_complete) begin
           hc_ready_comb = 1;
-          hc_ready_out  = 1;
+          next_state = FLUSH_CACHE_STATE;
+        end else begin
+          flush_complete = 0;
+          next_state = (lc_valid_reg || hc_valid_reg) ? LOOKUP : IDLE;  // check hit or miss
+          // only 1 direction can be ready at a time
+          if (lc_valid_reg) begin
+            lc_ready_comb = 1;
+            lc_ready_out  = 1;
+          end else if (hc_valid_reg) begin
+            hc_ready_comb = 1;
+            hc_ready_out  = 1;
+          end
         end
       end
       LOOKUP: begin
@@ -346,6 +355,13 @@ module cache #(
 
       FLUSH_CACHE_STATE: begin
         cache_temp = cache_flushed;
+        flush_complete = 1;
+        for (int i = 0; i < A; i++) begin
+          for (int j = 0; j < NUM_SETS; j++) begin
+            tag_temp[i][j].valid = 0;
+            tag_temp[i][j].dirty = 0;
+          end
+        end
         next_state = IDLE;
       end
 
@@ -450,6 +466,7 @@ module cache #(
                  cache_data[changed_way][cur_set][cur_offset*8+:64], {cur_tag, cur_set, cur_offset
                  });
       end
+      flush_complete_reg <= flush_complete;
     end
   end
 

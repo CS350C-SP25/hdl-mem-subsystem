@@ -205,22 +205,25 @@ module l1_data_cache #(
 
     case (cur_state)
       IDLE: begin
-        // Prefer reading from lc first -- prevents race conditions, data going to proc > priority
+
         if (lc_valid_in_reg) begin
           lc_ready_out_comb = 1;
         end else if (lsu_valid_in_reg) begin
           // check if all MSHRs are full, if they are, we can't accept this request (womp womp)
           for (int i = 0; i < MSHR_COUNT; i++) begin
-            if (!mshr_outputs[i].valid) begin
+            if (!mshr_outputs[i].valid || (mshr_outputs[i].valid && mshr_outputs[i].no_offset_addr == no_offset_addr)) begin
               // there is a free mshr, we can take the request
               lsu_ready_out_comb = 1;
             end
           end
         end
 
+
         wait_comb = 5;
 
-        if (lc_valid_in_reg || lsu_ready_out_comb) begin
+        if (flush_in) begin
+          next_state = FLUSH;
+        end else if (lc_valid_in_reg || lsu_ready_out_comb) begin
           next_state = (lc_valid_in_reg || lsu_we_in_reg) ? WRITE_CACHE : READ_CACHE;
         end
       end
@@ -497,7 +500,7 @@ module l1_data_cache #(
 
   always_ff @(posedge clk_in) begin : l1_register_updates
     if (!rst_N_in) begin
-      flush_in_reg <= 1'b0;
+      flush_in_reg <= 1'b1;  // flush when resetting
       lsu_valid_in_reg <= 1'b0;
       lsu_ready_in_reg <= 1'b0;
       lsu_addr_in_reg <= '0;
@@ -584,7 +587,7 @@ module l1_data_cache #(
           .mem_request_t(mshr_entry_t)
       ) mshr_queue_inst (
           .clk_in(clk_in),
-          .rst_in(!rst_N_in),
+          .rst_in(flush_in_reg),
           .enqueue_in(mshr_enqueue[i]),
           .dequeue_in(mshr_dequeue[i]),
           .req_in(mshr_entries[i]),
@@ -652,7 +655,7 @@ module l1_data_cache #(
       .rst_N_in(rst_N_in),
       .clk_in(clk_in),
       .cs_in(1),
-      .flush_in(cache_flush_reg),
+      .flush_in(flush_in_reg),
       .hc_valid_in(cache_hc_valid_reg),
       .hc_ready_in(cache_hc_ready_reg),
       .hc_addr_in(cache_hc_addr_reg),
