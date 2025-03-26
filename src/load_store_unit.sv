@@ -30,7 +30,6 @@ module load_store_unit #(
     input logic [63:0] l1d_value_in,
     input logic [TAG_WIDTH-1:0] l1d_tag_in,
     input logic l1d_write_complete_in,
-    input logic l1d_tag_complete_in,
 
     // Processor Handshaking Outputs
     output logic proc_instr_ready_out,
