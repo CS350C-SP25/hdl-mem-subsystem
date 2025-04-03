@@ -30,18 +30,17 @@ module request_scheduler #(
 
         localparam LOWER_ADDR_BITS_C = COL_BITS+$clog2(BANK_GROUPS)+$clog2(BANKS_PER_GROUP);
         localparam LOWER_ADDR_BITS_R = ROW_BITS+$clog2(BANK_GROUPS)+$clog2(BANKS_PER_GROUP);
-
+    localparam CYCLE_START_BIT = $clog2(BANK_GROUPS) + $clog2(BANKS_PER_GROUP) + ROW_BITS + COL_BITS + 512;
+    localparam CYCLE_END_BIT = CYCLE_START_BIT + 32;
+    localparam REQ_SIZE = CYCLE_END_BIT + 1;
     typedef struct packed {
-        logic [PADDR_BITS-1:0] addr;
         logic [$clog2(BANK_GROUPS)-1:0] bank_group;
         logic [$clog2(BANKS_PER_GROUP)-1:0] bank;
         logic [ROW_BITS-1:0] row;
         logic [COL_BITS-1:0] col;
         logic [511:0] val_in;
-        logic [2:0] state; // 000 nothing (needs everything), 001 precharge pending, 010 activate ready, 011 activate pending, 100 r/w ready, 101 r/w pending, 110 r/w done
         logic [31:0] cycle_count; // cycle counter of when the last state was set
         logic write;
-        logic valid; // do we need this?
     } mem_request_t;
 
     typedef struct packed {
@@ -67,7 +66,7 @@ module request_scheduler #(
     typedef struct packed {
         logic [BANKS-1:0] precharge;    // Precharge signal for each bank (1: precharge, 0: no precharge)
         logic [BANKS-1:0] activate;     // Activate signal for each bank (1: activate, 0: no activate)
-        bank_row_t row_address; // Row address to activate
+        logic [BANKS-1:0][ROW_BITS-1:0] row_address; // Row address to activate
     } bank_state_params_in_t;
 
     typedef struct packed {
@@ -90,15 +89,12 @@ module request_scheduler #(
         input logic write,
         input logic [2:0] state
     );
-        req.addr = addr;
         req.bank_group = bg;
         req.bank = b;
         req.row = r;
         req.col = c;
         req.val_in = data;
-        req.state = state; // precharged ? skip to activation stage
         req.cycle_count = cycle_count;
-        req.valid = 1'b1;
         req.write = write;
     endfunction
 
@@ -200,7 +196,8 @@ module request_scheduler #(
     mem_queue_params_out_t [BANKS-1:0] precharge_params_out;
     mem_queue_params_out_t [BANKS-1:0] activation_params_out;
 
-    logic [2:0] cmds [4] = {3'b000, 3'b001, 3'b010, 3'b011}; // Read, Write, Activate, Precharge
+    logic [2:0] cmds [4];
+    assign cmds = '{3'b000, 3'b001, 3'b010, 3'b011}; // Read, Write, Activate, Precharge
     logic done;
     mem_request_t incoming_req;
 
@@ -233,8 +230,7 @@ module request_scheduler #(
     sdram_bank_state #(
         .ROW_WIDTH(ROW_BITS),
         .NUM_GROUPS(BANK_GROUPS),
-        .BANKS_PER_GROUP(BANKS_PER_GROUP),
-        .bank_row_t(bank_row_t)
+        .BANKS_PER_GROUP(BANKS_PER_GROUP)
     ) bank_state_reg(
         clk_in, 
         rst_in,
@@ -252,7 +248,13 @@ module request_scheduler #(
     generate
         for (i = 0; i < BANKS; i = i + 1) begin : bank_queues
             // Read Queue
-            mem_cmd_queue #(.QUEUE_SIZE(16), .LATENCY(1), .mem_request_t(mem_request_t)) read_queue (
+            mem_cmd_queue #(
+                .QUEUE_SIZE(16), 
+                .LATENCY(1), 
+                .REQ_SIZE(REQ_SIZE), 
+                .CYCLE_START_BIT(CYCLE_START_BIT), 
+                .CYCLE_END_BIT(CYCLE_END_BIT))
+            read_queue (
                 .clk_in(clk_in),
                 .rst_in(rst_in),
                 .enqueue_in(read_params_in[i].incoming || (activation_params_out[i].promote & !activation_params_out[i].pending_top_out.write)),
@@ -268,7 +270,13 @@ module request_scheduler #(
             );
 
             // Write Queue
-            mem_cmd_queue #(.QUEUE_SIZE(16), .LATENCY(1), .mem_request_t(mem_request_t)) write_queue (
+            mem_cmd_queue #(
+                .QUEUE_SIZE(16), 
+                .LATENCY(1),
+                .REQ_SIZE(REQ_SIZE), 
+                .CYCLE_START_BIT(CYCLE_START_BIT), 
+                .CYCLE_END_BIT(CYCLE_END_BIT)) 
+            write_queue (
                 .clk_in(clk_in),
                 .rst_in(rst_in),
                 .enqueue_in(write_params_in[i].incoming || (activation_params_out[i].promote & activation_params_out[i].pending_top_out.write)),
@@ -284,7 +292,13 @@ module request_scheduler #(
             );
 
             // Precharge Queue
-            mem_cmd_queue #(.QUEUE_SIZE(16), .LATENCY(PRECHARGE_LATENCY), .mem_request_t(mem_request_t)) precharge_queue (
+            mem_cmd_queue #(
+                .QUEUE_SIZE(16), 
+                .LATENCY(PRECHARGE_LATENCY),
+                .REQ_SIZE(REQ_SIZE), 
+                .CYCLE_START_BIT(CYCLE_START_BIT), 
+                .CYCLE_END_BIT(CYCLE_END_BIT)) 
+            precharge_queue (
                 .clk_in(clk_in),
                 .rst_in(rst_in),
                 .enqueue_in(precharge_params_in[i].enqueue_in),
@@ -300,7 +314,13 @@ module request_scheduler #(
             );
 
             // Activation Queue
-            mem_cmd_queue #(.QUEUE_SIZE(16), .LATENCY(ACTIVATION_LATENCY), .mem_request_t(mem_request_t)) activation_queue (
+            mem_cmd_queue #(
+                .QUEUE_SIZE(16), 
+                .LATENCY(ACTIVATION_LATENCY),
+                .REQ_SIZE(REQ_SIZE), 
+                .CYCLE_START_BIT(CYCLE_START_BIT), 
+                .CYCLE_END_BIT(CYCLE_END_BIT)) 
+            activation_queue (
                 .clk_in(clk_in),
                 .rst_in(rst_in),
                 .enqueue_in(activation_params_in[i].incoming || precharge_params_out[i].promote),
@@ -314,7 +334,7 @@ module request_scheduler #(
                 .pending_empty_out(activation_params_out[i].pending_empty_out),
                 .promote(activation_params_out[i].promote)
             );
-        end
+        end: bank_queues
     endgenerate
 
     always_ff @(posedge clk_in or posedge rst_in) begin
@@ -343,19 +363,15 @@ module request_scheduler #(
             if (valid_out_t) begin
                 $display("[SCHEDULER] Scheduling cmd %b at row %x col %x bank %x", cmd_out_t, row_out_t, col_out_t, {bank_group_out, bank_out});
             end
-            // $display("Read Queue Ready Top %b", read_params_out[17].ready_top_out.row);
-            // $display("Activation Queue Pending Top %b", activation_params_out[17].pending_top_out.row);
-            // $display("Activation Queue Ready Top %b", activation_params_out[17].pending_top_out.row);
-            // $display("bank state active row out for bank idx 17: %b", bank_state_params_out.active_row_out[17].row_out);
         end
     end
 
     logic read_prio;
     generate
         logic[BANKS-1:0] read_prio_out;
-        for (genvar i = 0; i < BANKS; i++) begin
+        for (i = 0; i < BANKS; i++) begin: read_prio_for
             assign read_prio_out[i] = !read_params_out[i].ready_empty_out && read_params_out[i].ready_top_out.cycle_count > write_params_out[i].ready_top_out.cycle_count && read_params_out[i].ready_top_out.cycle_count < cycle_counter;
-        end
+        end: read_prio_for
         assign read_prio = |read_prio_out;
     endgenerate
     always_comb begin
