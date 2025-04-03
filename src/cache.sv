@@ -152,6 +152,7 @@ module cache #(
   tag_entry plru_tag;
   tag_entry plru_tag_reg;
   int changed_way;
+  logic flush_complete_reg;
   logic flush_complete;
   logic cur_dirty;
 
@@ -254,19 +255,26 @@ module cache #(
 
     plru_temp = plru_state;
 
+    flush_complete = flush_complete_reg;
+
     case (cur_state)
       IDLE: begin
-        next_state = (lc_valid_reg || hc_valid_reg) ? LOOKUP : IDLE;  // check hit or miss
-        // only 1 direction can be ready at a time
-        if (lc_valid_reg) begin
-          lc_ready_comb = 1;
-          lc_ready_out  = 1;
-        end else if (hc_valid_reg) begin
+        if (flush_reg && !flush_complete) begin
           hc_ready_comb = 1;
-          hc_ready_out  = 1;
+          next_state = FLUSH_CACHE_STATE;
+        end else begin
+          flush_complete = 0;
+          next_state = (lc_valid_reg || hc_valid_reg) ? LOOKUP : IDLE;  // check hit or miss
+          // only 1 direction can be ready at a time
+          if (lc_valid_reg) begin
+            lc_ready_comb = 1;
+            lc_ready_out  = 1;
+          end else if (hc_valid_reg) begin
+            hc_ready_comb = 1;
+            hc_ready_out  = 1;
+          end
         end
       end
-
       LOOKUP: begin
         for (int i = 0; i < A; i++) begin
           if (tag_array[i][cur_set].tag == cur_tag && tag_array[i][cur_set].valid) begin
@@ -275,10 +283,10 @@ module cache #(
           end
         end
 
-        if (lc_valid_reg) begin
+        if (lc_valid_reg || cl_in_reg) begin
           changed_way = get_victim_way(plru_state[cur_set]);
           plru_temp[cur_set] = update_plru(plru_state[cur_set], changed_way);
-          next_state = tag_array[changed_way][cur_set].dirty ? EVICT_BLOCK : WRITE_CACHE;
+          next_state = tag_array[changed_way][cur_set].dirty && tag_array[changed_way][cur_set].tag != cur_tag ? EVICT_BLOCK : WRITE_CACHE;
         end else if (cur_hit) begin
           changed_way = get_victim_way(plru_state[cur_set]);
 
@@ -291,7 +299,6 @@ module cache #(
             next_state = RESPOND_HC;
           end
         end else begin
-          $display("[%0t] we missed 🥀 at %x", $time, hc_addr_in);
           changed_way = get_victim_way(plru_state[cur_set]);
           next_state  = SEND_LOWER_CACHE_REQ;
         end
@@ -319,7 +326,7 @@ module cache #(
 
         tag_temp[hit_way_reg][cur_set].valid = 1;
         tag_temp[hit_way_reg][cur_set].tag = cur_tag;
-        tag_temp[hit_way_reg][cur_set].dirty = lc_valid_reg ? 0 : 1; // only dirty if its a write from hc, not lc
+        tag_temp[hit_way_reg][cur_set].dirty = (lc_valid_reg) ? 0 : 1; // only dirty if its a write from hc, not lc
 
         next_state = IDLE;
       end
@@ -331,16 +338,16 @@ module cache #(
           tag_array[hit_way_reg][cur_set].tag, cur_set, {BLOCK_OFFSET_BITS{1'b0}}
         };
 
+        // $display("evicting in the cahce module\n");
         evict_data = cache_data[hit_way_reg][cur_set];
-
         next_state = EVICT_WAIT;
       end
 
       // In the EVICT_WAIT state:
       EVICT_WAIT: begin
         if (lc_ready_reg) begin
-          // Eviction write accepted, cache is ready to do whatever now
-          next_state = IDLE;
+          // Eviction write accepted, cache needs to write the new data
+          next_state = WRITE_CACHE;
         end else begin
           next_state = EVICT_WAIT;
         end
@@ -348,6 +355,13 @@ module cache #(
 
       FLUSH_CACHE_STATE: begin
         cache_temp = cache_flushed;
+        flush_complete = 1;
+        for (int i = 0; i < A; i++) begin
+          for (int j = 0; j < NUM_SETS; j++) begin
+            tag_temp[i][j].valid = 0;
+            tag_temp[i][j].dirty = 0;
+          end
+        end
         next_state = IDLE;
       end
 
@@ -366,6 +380,10 @@ module cache #(
 
       default: next_state = IDLE;
     endcase
+
+    $monitor("[%0t][CACHE] State is %d, Offset is %h, Set is %h, Tag is %h, Addr is %h", $time,
+             cur_state, cur_offset, cur_set, cur_tag, hc_addr_reg);
+    // $monitor("[CACHE] Cache data in 0x%h, Line in reg: 0x%h", lc_value_reg, cache_line_in_reg);
   end : generic_cache_combinational
 
 
@@ -391,6 +409,13 @@ module cache #(
       end
       for (int i = 0; i < NUM_SETS; i++) begin
         plru_state[i] <= '0;
+      end
+
+      for (int i = 0; i < A; i++) begin
+        for (int j = 0; j < NUM_SETS; j++) begin
+          tag_array[i][j].dirty = 0;
+          tag_array[i][j].valid = 0;
+        end
       end
     end else begin
       lc_ready_reg <= lc_ready_in;
@@ -424,6 +449,24 @@ module cache #(
       lc_addr_out <= lc_addr_out_comb;
       hc_addr_out <= hc_addr_out_comb;
       hc_value_out <= hc_value_out_comb;
+
+      // DEBUG STATEMENTS
+      if (cur_state == LOOKUP) begin
+        if (lc_valid_reg || cl_in_reg) begin
+          $display("[CACHE] considering dirty %b for set 0x%x",
+                   tag_array[changed_way][cur_set].dirty, cur_set);
+          if (tag_array[changed_way][cur_set].dirty) begin
+            $display("[CACHE] we evicted 🌾 at %x", hc_addr_in);
+          end
+        end else if (!cur_hit) begin
+          $display("[CACHE] we missed 🥀 at %x, set 0x%x", hc_addr_in, cur_set);
+        end
+      end else if (cur_state == RESPOND_HC) begin
+        $display("[CACHE] Read value %x for addr %x, returning to higher cache",
+                 cache_data[changed_way][cur_set][cur_offset*8+:64], {cur_tag, cur_set, cur_offset
+                 });
+      end
+      flush_complete_reg <= flush_complete;
     end
   end
 

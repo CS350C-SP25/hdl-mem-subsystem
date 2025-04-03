@@ -45,7 +45,7 @@ module llc_dimm_tb (
     
     // DUT instances
     last_level_cache #(
-        .A(8),
+        .A(2),
         .B(64),
         .C(16384),
         .PADDR_BITS(19),
@@ -114,7 +114,7 @@ module llc_dimm_tb (
 
     always_ff @(posedge clk) begin
         if (hc_ready_out) begin
-            $display("HC_READY_OUT %b", hc_ready_out);
+            $display("[LLC] HC_READY_OUT %b", hc_ready_out);
         end
     end
     
