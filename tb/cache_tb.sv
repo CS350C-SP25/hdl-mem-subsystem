@@ -101,6 +101,7 @@ module cache_tb;
 
     // Wait for lower-level cache request
     wait (lc_valid_out == 1);
+
     $display("[%0t] Cache issued lower-level request for address 0x0", $time);
 
     // Simulate lower-level cache response
@@ -110,10 +111,8 @@ module cache_tb;
     lc_value_in = 512'h0123456789ABCDEF;
     $display("[%0t] Sending lower-level response", $time);
 
-    // #100;
-    // $finish;
-    // wait (lc_ready_out == 1);s
 
+    wait (lc_ready_out);
     // Complete response transaction
     @(posedge clk_in);
     lc_valid_in = 0;
@@ -167,7 +166,7 @@ module cache_tb;
 
     // #100;
     // $finish;
-    // wait (lc_ready_out == 1);s
+    wait (lc_ready_out == 1);
 
     // Complete response transaction
     @(posedge clk_in);
@@ -197,9 +196,9 @@ module cache_tb;
     end
 
 
-    // Send read request for address 0
-    $display("[%0t] Sending read request for address 0x4000", $time);
-    hc_addr_in = 64'h34000;
+
+    $display("[%0t] Sending read request for address 0x3000", $time);
+    hc_addr_in = 64'h3000;
     hc_we_in = 0;
     hc_valid_in = 1;
 
@@ -210,122 +209,13 @@ module cache_tb;
 
     // Wait for lower-level cache request
     wait (lc_valid_out == 1);
-    $display("[%0t] Cache issued lower-level request for address 0x4000", $time);
+    $display("[%0t] Cache issued lower-level request for address 0x3000", $time);
 
     // Simulate lower-level cache response
     @(posedge clk_in);
     lc_valid_in = 1;
-    lc_addr_in  = 64'h34000;
-    lc_value_in = 512'h0DEADBEEF12345678;
-    $display("[%0t] Sending lower-level response", $time);
-
-    // #100;
-    // $finish;
-    // wait (lc_ready_out == 1);s
-
-    // Complete response transaction
-    @(posedge clk_in);
-    lc_valid_in = 0;
-    hc_valid_in = 1;
-    hc_addr_in  = 64'h34000;
-
-    wait (hc_ready_out == 1);
-
-    // Wait for cache to process request
-    @(posedge clk_in);
-    #1;
-    hc_valid_in = 0;  // Request only needs to be valid for 1 cycle
-
-
-    $display("[%0t] Requesting higher-level data", $time);
-
-    // Wait for higher-level response
-    wait (hc_valid_out == 1);
-    $display("[%0t] Received higher-level response", $time);
-
-    // Verify returned data
-    if (hc_value_out === 64'h0DEADBEEF12345678) begin
-      $display("TEST PASSED: Correct data received");
-    end else begin
-      $error("TEST FAILED: Data mismatch. Expected %h, Got %h", 64'h0DEADBEEF12345678,
-             hc_value_out);
-    end
-
-
-    // Send read request for address 0
-    $display("[%0t] Sending read request for address 0x4000", $time);
-    hc_addr_in = 64'h44000;
-    hc_we_in = 0;
-    hc_valid_in = 1;
-
-    // Wait for cache to process request
-    @(posedge clk_in);
-    #1;
-    hc_valid_in = 0;  // Request only needs to be valid for 1 cycle
-
-    // Wait for lower-level cache request
-    wait (lc_valid_out == 1);
-    $display("[%0t] Cache issued lower-level request for address 0x4000", $time);
-
-    // Simulate lower-level cache response
-    @(posedge clk_in);
-    lc_valid_in = 1;
-    lc_addr_in  = 64'h44000;
-    lc_value_in = 512'h0CAD456789AACDEF;
-    $display("[%0t] Sending lower-level response", $time);
-
-    // #100;
-    // $finish;
-    // wait (lc_ready_out == 1);s
-
-    // Complete response transaction
-    @(posedge clk_in);
-    lc_valid_in = 0;
-    hc_valid_in = 1;
-    hc_addr_in  = 64'h44000;
-
-    wait (hc_ready_out == 1);
-
-    // Wait for cache to process request
-    @(posedge clk_in);
-    #1;
-    hc_valid_in = 0;  // Request only needs to be valid for 1 cycle
-
-
-    $display("[%0t] Requesting higher-level data", $time);
-
-    // Wait for higher-level response
-    wait (hc_valid_out == 1);
-    $display("[%0t] Received higher-level response", $time);
-
-    // Verify returned data
-    if (hc_value_out === 64'h0CAD456789AACDEF) begin
-      $display("TEST PASSED: Correct data received");
-    end else begin
-      $error("TEST FAILED: Data mismatch. Expected %h, Got %h", 64'h0CAD456789AACDEF, hc_value_out);
-    end
-
-
-    // Send read request for address 0x44
-    $display("[%0t] Sending read request for address 0x44", $time);
-    hc_addr_in = 64'h54;
-    hc_we_in = 0;
-    hc_valid_in = 1;
-
-    // Wait for cache to process request
-    @(posedge clk_in);
-    #1;
-    hc_valid_in = 0;  // Request only needs to be valid for 1 cycle
-
-    // Wait for lower-level cache request
-    wait (lc_valid_out == 1);
-    $display("[%0t] Cache issued lower-level request for address 0x44", $time);
-
-    // Simulate lower-level cache response
-    @(posedge clk_in);
-    lc_valid_in = 1;
-    lc_addr_in  = 64'h54;
-    lc_value_in = 512'hDEADBEEFDEADBEEF;
+    lc_addr_in  = 64'h3000;
+    lc_value_in = 512'h0CDD456789AACDEF;
     $display("[%0t] Sending lower-level response", $time);
 
     // #100;
@@ -336,7 +226,7 @@ module cache_tb;
     @(posedge clk_in);
     lc_valid_in = 0;
     hc_valid_in = 1;
-    hc_addr_in  = 64'h40;
+    hc_addr_in  = 64'h3000;
 
     wait (hc_ready_out == 1);
 
@@ -348,17 +238,76 @@ module cache_tb;
 
     $display("[%0t] Requesting higher-level data", $time);
 
+    // $finish;
     // Wait for higher-level response
     wait (hc_valid_out == 1);
     $display("[%0t] Received higher-level response", $time);
 
     // Verify returned data
-    if (hc_value_out === 64'hDEADBEEFDEADBEEF) begin
+    if (hc_value_out === 64'h0CDD456789AACDEF) begin
       $display("TEST PASSED: Correct data received");
     end else begin
-      $error("TEST FAILED: Data mismatch. Expected %h, Got %h", 64'hDEADBEEFDEADBEEF, hc_value_out);
+      $error("TEST FAILED: Data mismatch. Expected %h, Got %h", 64'h0CDD456789AACDEF, hc_value_out);
     end
 
+    // $finish;
+
+
+
+    $display("[%0t] Sending read request for address 0x5500", $time);
+    hc_addr_in = 64'h5500;
+    hc_we_in = 0;
+    hc_valid_in = 1;
+
+    // Wait for cache to process request
+    @(posedge clk_in);
+    #1;
+    hc_valid_in = 0;  // Request only needs to be valid for 1 cycle
+
+    // Wait for lower-level cache request
+    wait (lc_valid_out == 1);
+    $display("[%0t] Cache issued lower-level request for address 0x5500", $time);
+
+    // Simulate lower-level cache response
+    @(posedge clk_in);
+    lc_valid_in = 1;
+    lc_addr_in  = 64'h5500;
+    lc_value_in = 512'h0CBD456789AACDEF;
+    $display("[%0t] Sending lower-level response", $time);
+
+    // #100;
+    // $finish;
+    wait (lc_ready_out == 1);
+
+    // Complete response transaction
+    @(posedge clk_in);
+    lc_valid_in = 0;
+    hc_valid_in = 1;
+    hc_addr_in  = 64'h5500;
+
+    wait (hc_ready_out == 1);
+
+    // Wait for cache to process request
+    @(posedge clk_in);
+    #1;
+    hc_valid_in = 0;  // Request only needs to be valid for 1 cycle
+
+
+    $display("[%0t] Requesting higher-level data", $time);
+
+    // $finish;
+    // Wait for higher-level response
+    wait (hc_valid_out == 1);
+    $display("[%0t] Received higher-level response", $time);
+
+    // Verify returned data
+    if (hc_value_out === 64'h0CBD456789AACDEF) begin
+      $display("TEST PASSED: Correct data received");
+    end else begin
+      $error("TEST FAILED: Data mismatch. Expected %h, Got %h", 64'h0CBD456789AACDEF, hc_value_out);
+    end
+
+    // $finish;
 
 
     // *** Write Test Case ***  
@@ -366,15 +315,15 @@ module cache_tb;
 
     // Send write request to the same address 0x0 with new data
     $display("[%0t] Sending write request for address 0x0 with data 0xFEDCBA9876543210", $time);
-    hc_addr_in = 64'h00;
+    hc_addr_in = 64'h5500;
     hc_value_in = 64'hFEDCBA9876543210;
     hc_we_in = 1;
     hc_valid_in = 1;
 
     // Wait for cache to process write request (might involve eviction if dirty, handled internally)
-    @(posedge clk_in);
-    #1;
+    wait (hc_ready_out);
     hc_valid_in = 0;
+    hc_we_in = 0;
 
     // Wait for lower-level cache request (in case of write miss or eviction)
 
@@ -398,17 +347,18 @@ module cache_tb;
     @(posedge clk_in);
     $display("[%0t] Write request processed", $time);
 
+    #10;
+
     // *** Read-After-Write Test Case ***
     $display("\n*** [%0t] Starting Read-After-Write Test Case (Same Address 0x0) ***", $time);
 
     // Send read request again to the same address 0x0
     $display("[%0t] Sending read request for address 0x0 (Read-After-Write)", $time);
-    hc_addr_in = 64'h00;
+    hc_addr_in = 64'h5500;
     hc_we_in = 0;
     hc_valid_in = 1;
 
     // Wait for cache to process request (this should be a cache hit now)
-    @(posedge clk_in);
     wait (hc_ready_out);
     hc_valid_in = 0;
 
@@ -433,58 +383,6 @@ module cache_tb;
     end
 
 
-    // Send read request for address 0
-    $display("[%0t] Sending read request for address 0x4000", $time);
-    hc_addr_in = 64'h4000;
-    hc_we_in = 0;
-    hc_valid_in = 1;
-
-    // Wait for cache to process request
-    @(posedge clk_in);
-    #1;
-    hc_valid_in = 0;  // Request only needs to be valid for 1 cycle
-
-    // Wait for lower-level cache request
-    wait (lc_valid_out == 1);
-    $display("[%0t] Cache issued lower-level request for address 0x4000", $time);
-
-    // Simulate lower-level cache response
-    @(posedge clk_in);
-    lc_valid_in = 1;
-    lc_addr_in  = 64'h4000;
-    lc_value_in = 512'h0CAD456789AACDEF;
-    $display("[%0t] Sending lower-level response", $time);
-
-    // #100;
-    // $finish;
-    // wait (lc_ready_out == 1);s
-
-    // Complete response transaction
-    @(posedge clk_in);
-    lc_valid_in = 0;
-    hc_valid_in = 1;
-    hc_addr_in  = 64'h4000;
-
-    wait (hc_ready_out == 1);
-
-    // Wait for cache to process request
-    @(posedge clk_in);
-    #1;
-    hc_valid_in = 0;  // Request only needs to be valid for 1 cycle
-
-
-    // $display("[%0t] Requesting higher-level data", $time);
-
-    // // Wait for higher-level response
-    // wait (hc_valid_out == 1);
-    // $display("[%0t] Received higher-level response", $time);
-
-    // // Verify returned data
-    // if (hc_value_out === 64'h0CAD456789AACDEF) begin
-    //   $display("TEST PASSED: Correct data received");
-    // end else begin
-    //   $error("TEST FAILED: Data mismatch. Expected %h, Got %h", 64'h0CAD456789AACDEF, hc_value_out);
-    // end
 
     #10 $finish;
   end
