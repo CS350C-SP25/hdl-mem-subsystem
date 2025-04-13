@@ -359,7 +359,7 @@ module cache #(
 
     $monitor(
         "[%0t][CACHE] State is %d, Offset is %h, Set is %h, Tag is %h, Addr is %h, Dirty is now: %b",
-        $time, cur_state, cur_offset, cur_set, cur_tag, hc_addr_reg,
+        $time, cur_state, cur_offset, cur_set, cur_tag, lc_valid_reg ? lc_addr_reg : hc_addr_reg,
         tag_temp[hit_way_reg][cur_set].dirty);
 
     // $monitor("[CACHE] Cache data in 0x%h, Line in reg: 0x%h", lc_value_reg, cache_line_in_reg);

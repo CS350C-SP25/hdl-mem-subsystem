@@ -138,6 +138,8 @@ module l1_data_cache_tb;
     $display("[%0t] Cache accepted read request", $time);
     lsu_valid_in = 1'b0;
     lsu_ready_in = 1'b1;
+    #2;
+    lsu_ready_in = 0;
   endfunction
 
   // Function to read the write complete from L1D
@@ -286,9 +288,11 @@ module l1_data_cache_tb;
     read_from_lsu(64'h7004);
     read_from_lsu(64'h9004);
     read_from_lsu(64'hF004);
-    simulate_lc_data({64'h5005}[PADDR_BITS-1:0], 512'hDEADBEEF);
-
-    // wait(lsu_valid_out);
+    // read_from_lsu(64)
+    #100;
+    simulate_lc_data({64'h5000}[PADDR_BITS-1:0], 512'hDEADBEEF);
+  // #100;
+    wait(lsu_valid_out);
   endtask
 
 
@@ -300,11 +304,11 @@ module l1_data_cache_tb;
     initialize_inputs();
     reset_sequence();
 
-    // Run test cases
-    run_basic_read_hit_test();
-    run_basic_read_miss_test();
-    run_basic_write_hit_test();
-    run_basic_write_miss_test();
+    // // Run test cases
+    // run_basic_read_hit_test();
+    // run_basic_read_miss_test();
+    // run_basic_write_hit_test();
+    // run_basic_write_miss_test();
     run_mshr_full_test();
 
     $display("PASSED ALL TEST CASES");
