@@ -319,6 +319,7 @@ module l1_data_cache #(
 
         // only add if there is no MSHR with the current block address
         if (!found) begin
+          $display("primary miss!");
           // PRIMARY MISS -- let's make a new miss queue
           // add to the MSHR
           if (isFree) begin
@@ -337,6 +338,7 @@ module l1_data_cache #(
           // now, we shall send a request for the cache line
         end else begin
           // SECONDARY MISS -- let's add to the miss queue
+          $display("secondary miss!");
           next_state = IDLE;
           if (!mshr_full[pos]) begin
             if (lsu_we_in_reg) begin
@@ -388,7 +390,8 @@ module l1_data_cache #(
       end
 
       CLEAR_MSHR: begin
-        $display("[%0t] Clearing MSHR with size ", $time);
+        $display("[%0t] Clearing MSHR", $time);
+
         // TODO: need to dequeu MSHR and complete frfom front to bacl;
         // for (int i = MSHR_COUNT - 1; i >= 0; i--) begin
         //   // $display("The addr was %h and %h", lc_addr_in_reg[PADDR_BITS-1:BLOCK_OFFSET_BITS],

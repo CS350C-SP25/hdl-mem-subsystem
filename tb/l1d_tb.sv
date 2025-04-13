@@ -285,13 +285,22 @@ module l1_data_cache_tb;
     $display("running test");
     read_from_lsu(64'h5000);
     #50;
+    read_from_lsu(64'h5004);
+    #50;
     read_from_lsu(64'h7004);
+    #50;
     read_from_lsu(64'h9004);
+    #50;
     read_from_lsu(64'hF004);
     // read_from_lsu(64)
     #100;
     simulate_lc_data({64'h5000}[PADDR_BITS-1:0], 512'hDEADBEEF);
   // #100;
+  lsu_ready_in = 1;
+    wait(lsu_valid_out);
+    $display("Got the data");
+    lsu_ready_in = 0;
+    #100;
     wait(lsu_valid_out);
   endtask
 
