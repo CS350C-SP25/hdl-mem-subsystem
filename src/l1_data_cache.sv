@@ -181,7 +181,7 @@ module l1_data_cache #(
     cache_flush_next = 0;
     cache_hc_valid_next = 0;
     cache_hc_ready_next = 0;
-    cache_hc_addr_next = cur_addr;
+    cache_hc_addr_next = cache_hc_addr_reg;
     cache_hc_value_next = lsu_value_in_reg;
     cache_hc_we_next = lsu_we_in_reg;
     cache_cl_next = 0;
