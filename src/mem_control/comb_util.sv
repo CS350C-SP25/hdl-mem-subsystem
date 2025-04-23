@@ -59,23 +59,77 @@ module dimm_to_paddr #(
     end
 endmodule
 
-// submodule for handling memory request queues
+// // submodule for handling memory request queues
+// module queue #(
+//     parameter QUEUE_SIZE=16,
+//     type mem_request_t = logic // default placeholder
+// ) (
+//     input logic clk_in,
+//     input logic rst_in,
+//     input logic enqueue_in,
+//     input logic dequeue_in,
+//     input mem_request_t req_in,
+//     input logic [31:0] cycle_count,
+//     output mem_request_t req_out,
+//     output logic empty,
+//     output logic full
+// );
+//     mem_request_t queue[QUEUE_SIZE-1:0];
+//     mem_request_t next_queue[QUEUE_SIZE-1:0];
+//     logic [$clog2(QUEUE_SIZE)-1:0] next_head;
+//     logic [$clog2(QUEUE_SIZE):0] next_size;
+//     logic [$clog2(QUEUE_SIZE)-1:0] head;
+//     logic [$clog2(QUEUE_SIZE):0] size;
+//     always_ff @(posedge clk_in or posedge rst_in) begin
+//         if (rst_in) begin
+//             head <= 0;
+//             size <= 0;
+//         end else begin
+//             queue <= next_queue;
+//             size <= next_size;
+//             head <= next_head;
+//         end
+//         // $display("Size %d", size);
+//     end
+
+//     always_comb begin
+//         next_queue = queue;
+//         next_size = size;
+//         next_head = head;
+        
+//         if (enqueue_in && !full) begin
+//             next_queue[(head + size) % QUEUE_SIZE] = req_in;
+//             next_size = size + 1;
+//         end
+//         if (dequeue_in && !empty) begin
+//             next_size = size - 1;
+//             next_head = (head + 4'b1) & {$clog2(QUEUE_SIZE){1'b1}}; // % QUEUE_SIZE
+//             // $display("dequeuing \n");
+//         end
+//     end
+//     // Full & Empty Flags
+//     assign req_out = queue[head];
+//     assign full = (size == QUEUE_SIZE);
+//     assign empty = (size == 0);
+// endmodule: queue;
+
+// specified queue 
 module mem_req_queue #(
     parameter QUEUE_SIZE=16,
-    type mem_request_t = logic // default placeholder
+    parameter REQ_SIZE=0
 ) (
     input logic clk_in,
     input logic rst_in,
     input logic enqueue_in,
     input logic dequeue_in,
-    input mem_request_t req_in,
+    input logic [REQ_SIZE-1:0] req_in,
     input logic [31:0] cycle_count,
-    output mem_request_t req_out,
+    output logic [REQ_SIZE-1:0] req_out,
     output logic empty,
     output logic full
 );
-    mem_request_t queue[QUEUE_SIZE-1:0];
-    mem_request_t next_queue[QUEUE_SIZE-1:0];
+    logic [REQ_SIZE-1:0] queue[QUEUE_SIZE-1:0];
+    logic [REQ_SIZE-1:0] next_queue[QUEUE_SIZE-1:0];
     logic [$clog2(QUEUE_SIZE)-1:0] next_head;
     logic [$clog2(QUEUE_SIZE):0] next_size;
     logic [$clog2(QUEUE_SIZE)-1:0] head;
@@ -111,7 +165,7 @@ module mem_req_queue #(
     assign req_out = queue[head];
     assign full = (size == QUEUE_SIZE);
     assign empty = (size == 0);
-endmodule: mem_req_queue;
+endmodule: mem_req_queue
 
 module mshr_queue #(
     parameter QUEUE_SIZE=16,
@@ -166,117 +220,7 @@ module mshr_queue #(
     assign full = (size == QUEUE_SIZE);
     assign empty = (size == 0);
     assign queue_read_only = queue;
-endmodule: mshr_queue;
-
-// // CLB to assemble commands from scheduler for DIMM
-// module command_clb #(
-//     parameter int ROW_BITS = 8,    // bits to address rows
-//     parameter int COL_BITS = 4     // bits to address columns
-// ) (
-//     // Inputs from request_scheduler
-//     input logic [ROW_BITS-1:0] row_in,
-//     input logic [COL_BITS-1:0] col_in,
-//     input logic [2:0] cmd_in, // 0 is read, 1 is write, 2 is activate, 3 is precharge; if valid_out is 0 then block
-//     output logic act_out, // Command bit
-//     output logic [16:0] dram_addr_out  // row/col or special bits.
-
-// );
-
-//     // Commands enum
-//     typedef enum logic[2:0] {
-//         READ = 3'b000,
-//         WRITE = 3'b001,
-//         ACTIVATE = 3'b010,
-//         PRECHARGE = 3'b011
-//     } commands;
-
-//     logic ras, cas, we;
-
-//     always_comb begin
-
-//         // If row activation
-//         if (cmd_in == ACTIVATE) begin
-//             act_out = '0; // Deactivate command pin
-//             ras = '0;
-//           	cas = '0;
-//           	we = '0;
-
-//             // Left-pad row address with 0's if row width is smaller than address width
-//             dram_addr_out = {{(17-ROW_BITS){1'b0}}, row_in};
-
-//         // If command
-//         end else begin
-//             act_out = '1; // Activate command pin
-
-//             // Set command pins
-//             case (cmd_in)
-//                 READ: begin
-//                     ras = '1;
-//                     cas = '0;
-//                     we = '1;
-//                 end
-//                 WRITE: begin
-//                     ras = '1;
-//                     cas = '0;
-//                     we = '0;
-//                 end
-//                 PRECHARGE: begin
-//                     ras = '0;
-//                     cas = '1;
-//                     we = '0;
-//                 end
-//               	default: begin // Should not get here
-//                   ras = 'x;
-//                   cas = 'x;
-//                   we = 'x;
-//                 end
-//             endcase
-//             // A10 is unused for commands, but could be used to indicate auto-precharge
-//             // Set command pins, set unused bits to 0
-//             dram_addr_out = {ras, cas, we, {(17-3-COL_BITS){1'b0}}, col_in};
-//         end
-
-//     end
-
-// endmodule
-
-// module dimm_addr_assembler #(
-//     parameter int ROW_BITS = 8,    // bits to address rows
-//     parameter int COL_BITS = 4
-// ) (
-//     input logic [2:0] cmd_in,
-//     input logic [ROW_BITS-1:0] row_in,
-//     input logic [COL_BITS-1:0] col_in,
-//     output logic [16:0] addr
-// );
-//     typedef enum logic[2:0] {
-//         READ = 3'b000,
-//         WRITE = 3'b001,
-//         ACTIVATE = 3'b010,
-//         PRECHARGE = 3'b011
-//     } commands;
-
-    // always_comb begin
-    //     case (cmd_in)
-    //         READ: begin
-    //             addr = {1'b1, 1'b0, 1'b1, 3'bz, 1'b0, {(10-COL_BITS){1'bz}}, col_in};
-    //         end
-    //         WRITE: begin
-    //             addr = {1'b1, 1'b0, 1'b0, 3'bz, 1'b0, {(10-COL_BITS){1'bz}}, col_in};
-    //         end
-    //         ACTIVATE: begin
-    //             addr = {{(17-ROW_BITS){1'b0}}, row_in};
-    //         end
-    //         PRECHARGE: begin
-    //             addr = {1'b0, 1'b1, 1'b0, 3'bz, 1'b0, {(10-COL_BITS){1'bz}}, col_in};
-    //         end
-    //         default:
-    //             addr = 17'bz;
-    //     endcase
-    // end
-// 
-// endmodule
-
+endmodule: mshr_queue
 
 // Module to send commands to DIMM and receive responses
 module command_sender #(
@@ -316,6 +260,9 @@ module command_sender #(
         PRECHARGE = 3'b011
     } commands;
 
+    localparam CYCLE_START_BIT = PADDR_BITS;
+    localparam CYCLE_END_BIT = CYCLE_START_BIT + 32;
+    localparam REQ_SIZE = CYCLE_END_BIT + COL_BITS;
     // Module for queueing memory requests
     typedef struct packed {
         logic [PADDR_BITS-1:0] paddr;
@@ -332,7 +279,7 @@ module command_sender #(
 
     mem_req_queue #(
         .QUEUE_SIZE(32),
-        .mem_request_t(read_request_t) // default placeholder
+        .REQ_SIZE(REQ_SIZE)
     ) read_queue(
         .clk_in(clk_in),
         .rst_in(!rst_N_in),
@@ -410,7 +357,9 @@ module command_sender #(
                 $display("clock edge when i receive valid %x", clk_in);
                 write_bursting <= 1'b1;
             end if (read_bursting) begin
-                val_out[{(burst_counter + read_col_start)}[2:0]] = mem_bus_value_io;
+                logic [2:0] burst_col_index;
+                assign burst_col_index = (burst_counter + read_col_start) & 3'b111;
+                val_out[burst_col_index] = mem_bus_value_io;
                 burst_counter <= burst_counter == 7 ? 0 : burst_counter + 1;
                 read_bursting = burst_counter != 7;
                 $display("cmd sender read: %x, idx %d", mem_bus_value_io, {(burst_counter + read_col_start)}[2:0]);

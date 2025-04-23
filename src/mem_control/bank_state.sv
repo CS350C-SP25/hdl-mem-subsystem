@@ -4,22 +4,21 @@ module sdram_bank_state #(
     parameter BANKS_PER_GROUP = 4, // Number of banks per group
     parameter BANKS = NUM_GROUPS * BANKS_PER_GROUP, // Total number of banks
     parameter ACTIVATION_LATENCY = 8,
-    parameter PRECHARGE_LATENCY = 5,
-    type bank_row_t = logic
+    parameter PRECHARGE_LATENCY = 5
 )(
     input logic clk,               // Clock
     input logic rst,               // Reset
     input logic [BANKS-1:0] precharge,    // Precharge signal for each bank (1: precharge, 0: no precharge)
     input logic [BANKS-1:0] activate,     // Activate signal for each bank (1: activate, 0: no activate)
-    input bank_row_t row_address, // Row address to activate
-    output bank_row_t [BANKS-1:0] active_row_out,  // Active row for a selected bank
+    input logic [ROW_WIDTH-1:0] row_address, // Row address to activate
+    output logic [BANKS-1:0][ROW_WIDTH-1:0] active_row_out,  // Active row for a selected bank
     output logic [BANKS-1:0] ready_to_access, // Bank ready to access (not in precharge)
     output logic [BANKS-1:0] active_bank,      // Bank currently active (activated but not precharged)
     output logic [BANKS-1:0] blocked          // Bank is blocked (precharging)
 );
 
     // States for each bank
-    bank_row_t [BANKS-1:0] active_row;  // Active row address for each bank
+    logic [BANKS-1:0][ROW_WIDTH-1:0] active_row;  // Active row address for each bank
     logic [BANKS-1:0] active; // Active flag for each bank
     logic [BANKS-1:0] ready; // Ready flag for each bank (not in precharge)
     logic [BANKS-1:0] blocked_reg; // Internal flag for blocked banks (precharging)
