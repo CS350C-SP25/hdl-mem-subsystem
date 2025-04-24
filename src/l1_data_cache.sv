@@ -269,6 +269,7 @@ module l1_data_cache #(
             // no eviction! we can simply go back to MSHRs and do the whole queue
           end
         end else if (cache_lc_valid_out_reg) begin
+          $display("miss detected on write");
           // Requesting data from lower cache -- this is a MISS or EVICTION, GOTO MISS STATUS HANDLE REGISTERS
           cache_lc_ready_in_next = 1;  // complete transcation
 
@@ -353,6 +354,7 @@ module l1_data_cache #(
 
               mshr_enqueue[pos] = 1;
 
+              $display("added to mshr now going to request from LC");
               next_state = SEND_REQ_LC;
             end else begin
               // TODO: FWD AND ALSO CHECKING THE ENTIRE QUEUE — HOW? IDK
@@ -440,6 +442,7 @@ module l1_data_cache #(
 
       WRITE_FROM_MSHR: begin
         cache_hc_valid_next = 1;
+        cache_hc_we_next = 1;
         // this should NEVER miss because the cache IS blcoking while unqueueing, everything SHOULD hit.
         if (cache_hc_ready_out_reg) begin
           // it took the signal, we can go to the next state, which is returning a signal that write completed, and then cominb back to finish the queue.
@@ -450,6 +453,7 @@ module l1_data_cache #(
 
       COMPLETE_WRITE: begin
         lsu_valid_out_comb = 1;
+        lsu_write_complete_out_comb = 1;
         // basically, wait until the LSU accepts that our write was done
         if (lsu_ready_in_reg) begin
           // LSU was ready, we can just submit the data and exit
@@ -472,7 +476,7 @@ module l1_data_cache #(
       end
 
       COMPLETE_READ: begin
-        lsu_valid_out_comb  = cache_hc_valid_out_reg;
+        lsu_valid_out_comb  = 1;
         lsu_value_out_comb  = cache_hc_value_out_reg;
         cache_hc_ready_next = 1;
 
@@ -498,6 +502,8 @@ module l1_data_cache #(
         lc_valid_out_comb = 1;
         lc_addr_out_comb  = cache_lc_addr_out_reg;
         if (lc_ready_in_reg) begin  // the LC took in the request, we are good
+          $display("req accepted to lc");
+          cache_hc_we_next = 0;
           next_state = IDLE;
         end
       end

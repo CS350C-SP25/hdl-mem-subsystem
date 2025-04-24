@@ -110,6 +110,7 @@ module l1_data_cache_tb;
     lsu_we_in = 1'b1;
     lsu_valid_in = 1'b1;
     lsu_ready_in = 1;
+    #10;
     wait (lsu_ready_out);
     lsu_valid_in = 1'b0;
     $display("[%0t]  Write complete acknowledged by LSU", $time);
@@ -291,15 +292,21 @@ module l1_data_cache_tb;
     read_from_lsu(64'h9004);
     // #50;
     read_from_lsu(64'hF004);
+
+    write_to_lsu(64'h5004, 64'hCABCABCAB);
     // read_from_lsu(64)
     simulate_lc_data({64'h5000}[PADDR_BITS-1:0], 512'hDEADBEEF);
   // #100;
+  #10;
   lsu_ready_in = 1;
     wait(lsu_valid_out);
     $display("Got the data");
     lsu_ready_in = 0;
     #100;
     wait(lsu_valid_out);
+    lsu_ready_in = 1;
+
+    #1000;
   endtask
 
 

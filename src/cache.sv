@@ -264,10 +264,12 @@ module cache #(
               // need to evict
               $display("hit but evict necessary");
               next_state = EVICT_BLOCK;
-            end else begin
+            end else if (lc_valid_reg) begin
               // can just install data into the way
               $display("writing directly on a miss");
               next_state = WRITE_CACHE;
+            end else begin
+              next_state = SEND_LOWER_CACHE_REQ;
             end
           end else begin
             $display("sending req lower");
