@@ -181,7 +181,7 @@ module l1_data_cache #(
     cache_flush_next = 0;
     cache_hc_valid_next = 0;
     cache_hc_ready_next = 0;
-    cache_hc_addr_next = cur_addr;
+    cache_hc_addr_next = cache_hc_addr_reg;
     cache_hc_value_next = lsu_value_in_reg;
     cache_hc_we_next = lsu_we_in_reg;
     cache_cl_next = 0;
@@ -240,14 +240,14 @@ module l1_data_cache #(
       WRITE_CACHE: begin
         if (lc_valid_in_reg) begin
           $display("WRITING FROM LC");
-          cache_lc_valid_in_next = 1;
+          cache_lc_valid_in_next = (cache_hc_ready_out_reg || cache_lc_ready_out_reg) ? 0 : 1;
           cache_lc_value_in_next = lc_value_in_reg;
           cache_lc_addr_in_next  = lc_addr_in_reg;
 
         end else begin
           $display("WRITING FROM LSU");
           cache_hc_valid_next = 1;
-          cache_hc_we_next = 1;
+          cache_hc_we_next = (cache_hc_ready_out_reg || cache_lc_ready_out_reg) ? 0 : 1;
           cache_hc_value_next = lsu_value_in_reg;
           cache_hc_addr_next = cur_addr;
         end
@@ -256,6 +256,8 @@ module l1_data_cache #(
       end
 
       WAIT_CACHE: begin
+        cache_hc_valid_next = 0;
+        cache_lc_valid_in_next = 0;
         // if this was a write from lower cache, we only hae to worry about evictions, not about any of the other stuff
         if (lc_valid_in_reg) begin
           // was a write from the lower cache, either evict, or continue to clearing mshr
@@ -267,6 +269,7 @@ module l1_data_cache #(
             // no eviction! we can simply go back to MSHRs and do the whole queue
           end
         end else if (cache_lc_valid_out_reg) begin
+          $display("miss detected on write");
           // Requesting data from lower cache -- this is a MISS or EVICTION, GOTO MISS STATUS HANDLE REGISTERS
           cache_lc_ready_in_next = 1;  // complete transcation
 
@@ -310,9 +313,14 @@ module l1_data_cache #(
           end
         end
 
+        cache_hc_valid_next = 0;
+        cache_lc_valid_in_next = 0;
+        cache_hc_we_next = 0;
+
 
         // only add if there is no MSHR with the current block address
         if (!found) begin
+          $display("primary miss!");
           // PRIMARY MISS -- let's make a new miss queue
           // add to the MSHR
           if (isFree) begin
@@ -331,6 +339,7 @@ module l1_data_cache #(
           // now, we shall send a request for the cache line
         end else begin
           // SECONDARY MISS -- let's add to the miss queue
+          $display("secondary miss!");
           next_state = IDLE;
           if (!mshr_full[pos]) begin
             if (lsu_we_in_reg) begin
@@ -345,6 +354,7 @@ module l1_data_cache #(
 
               mshr_enqueue[pos] = 1;
 
+              $display("added to mshr now going to request from LC");
               next_state = SEND_REQ_LC;
             end else begin
               // TODO: FWD AND ALSO CHECKING THE ENTIRE QUEUE — HOW? IDK
@@ -382,7 +392,8 @@ module l1_data_cache #(
       end
 
       CLEAR_MSHR: begin
-        $display("[%0t] Clearing MSHR with size ", $time);
+        $display("[%0t] Clearing MSHR", $time);
+
         // TODO: need to dequeu MSHR and complete frfom front to bacl;
         // for (int i = MSHR_COUNT - 1; i >= 0; i--) begin
         //   // $display("The addr was %h and %h", lc_addr_in_reg[PADDR_BITS-1:BLOCK_OFFSET_BITS],
@@ -403,12 +414,14 @@ module l1_data_cache #(
           end
         end
 
-
-        if (!mshr_empty[pos] && mshr_outputs[pos].valid) begin
+        $display("Found %h something at loc %h", found, pos);
+        if (!mshr_empty[pos] && mshr_outputs[pos].valid && found) begin
           mshr_dequeue[pos]  = 1;
           // run the request
           cache_hc_addr_next = mshr_outputs[pos].paddr;
           lsu_tag_out_comb   = mshr_outputs[pos].tag;
+
+          $display("Running request for found mshr");
 
           if (mshr_outputs[pos].we) begin
             // this is a write 
@@ -417,6 +430,7 @@ module l1_data_cache #(
             cache_hc_we_next = 1;
             next_state = WRITE_FROM_MSHR;
           end else begin
+            $display("read request for found mshr");
             // this is A READ
             next_state = READ_FROM_MSHR;
           end
@@ -428,6 +442,7 @@ module l1_data_cache #(
 
       WRITE_FROM_MSHR: begin
         cache_hc_valid_next = 1;
+        cache_hc_we_next = 1;
         // this should NEVER miss because the cache IS blcoking while unqueueing, everything SHOULD hit.
         if (cache_hc_ready_out_reg) begin
           // it took the signal, we can go to the next state, which is returning a signal that write completed, and then cominb back to finish the queue.
@@ -438,6 +453,7 @@ module l1_data_cache #(
 
       COMPLETE_WRITE: begin
         lsu_valid_out_comb = 1;
+        lsu_write_complete_out_comb = 1;
         // basically, wait until the LSU accepts that our write was done
         if (lsu_ready_in_reg) begin
           // LSU was ready, we can just submit the data and exit
@@ -449,6 +465,7 @@ module l1_data_cache #(
 
       READ_FROM_MSHR: begin
         cache_hc_valid_next = 1;
+        cache_hc_addr_next  = cache_hc_addr_reg;
         // this should NEVER miss because the cache IS blcoking while unqueueing, everything SHOULD hit.
         if (cache_hc_ready_out_reg) begin
           // it took the signal, we can go to the next state, which is returning a signal that read completed, and then cominb back to finish the queue.
@@ -459,7 +476,7 @@ module l1_data_cache #(
       end
 
       COMPLETE_READ: begin
-        lsu_valid_out_comb  = cache_hc_valid_out_reg;
+        lsu_valid_out_comb  = 1;
         lsu_value_out_comb  = cache_hc_value_out_reg;
         cache_hc_ready_next = 1;
 
@@ -485,6 +502,8 @@ module l1_data_cache #(
         lc_valid_out_comb = 1;
         lc_addr_out_comb  = cache_lc_addr_out_reg;
         if (lc_ready_in_reg) begin  // the LC took in the request, we are good
+          $display("req accepted to lc");
+          cache_hc_we_next = 0;
           next_state = IDLE;
         end
       end
