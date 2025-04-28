@@ -372,7 +372,7 @@ module cache #(
           end
         end
 
-        hc_value_out_comb = cache_data[changed_way][cur_set][cur_offset*8+:64];
+        hc_value_out_comb = cache_data[changed_way][cur_set][cur_offset*8+:W];
         hc_valid_comb = 1;
         hc_addr_out_comb = {cur_tag, cur_set, cur_offset};
         next_state = hc_ready_reg ? IDLE : RESPOND_HC;
@@ -463,8 +463,7 @@ module cache #(
         end
       end else if (cur_state == RESPOND_HC) begin
         $display("[CACHE] Read value %x for addr %x, returning to higher cache",
-                 cache_data[changed_way][cur_set][cur_offset*8+:64], {cur_tag, cur_set, cur_offset
-                 });
+                 cache_data[changed_way][cur_set][cur_offset*8+:W], {cur_tag, cur_set, cur_offset});
       end
       flush_complete_reg <= flush_complete;
     end
