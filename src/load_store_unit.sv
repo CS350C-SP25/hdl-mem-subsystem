@@ -1,9 +1,8 @@
-
 //=====================================================================
 // Top-Level Load-Store Unit
 //=====================================================================
 module load_store_unit #(
-    parameter int QUEUE_DEPTH = 32,
+    parameter int QUEUE_DEPTH = 4,
     parameter int TAG_WIDTH   = 10
 ) (
     // Generic inputs
