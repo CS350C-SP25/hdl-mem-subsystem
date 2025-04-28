@@ -1,4 +1,3 @@
-`include "mem_control/comb_util.sv"
 /*
  The L1 Data cache is expected to be:
  - PIPT. However the addresses it accepts are virtual, so it must interface with
@@ -18,6 +17,28 @@
  A fun issue is that the LSU expects a virtual address to be returned to it, but
  this is a PIPT cache. Maybe the MSHRs can help?
  */
+
+package l1dpack;
+  parameter int A = 3;
+  parameter int B = 64;
+  parameter int C = 1536;
+  parameter int PADDR_BITS = 22;
+  parameter int MSHR_COUNT = 4;
+  parameter int TAG_BITS = 10;
+
+  localparam int BLOCK_OFFSET_BITS = $clog2(B);
+  localparam PADDR_SIZE = PADDR_BITS;
+
+
+  typedef struct packed {
+    logic [PADDR_SIZE-1:0]                 paddr;           // address
+    logic [PADDR_BITS-1:BLOCK_OFFSET_BITS] no_offset_addr;  // address without offset
+    logic                                  we;              // write enable
+    logic [63:0]                           data;            // if writing data, the store value
+    logic [TAG_BITS-1:0]                   tag;             // processor tag, not memory addr tag
+    logic                                  valid;
+  } mshr_entry_t;
+endpackage
 
 // all this module needs to do is keep tracking mshr matching, that's all.
 module l1_data_cache #(
@@ -60,23 +81,15 @@ module l1_data_cache #(
 );
 
   localparam PADDR_SIZE = PADDR_BITS;
-  typedef struct packed {
-    logic [PADDR_SIZE-1:0]                 paddr;           // address
-    logic [PADDR_BITS-1:BLOCK_OFFSET_BITS] no_offset_addr;  // address without offset
-    logic                                  we;              // write enable
-    logic [63:0]                           data;            // if writing data, the store value
-    logic [TAG_BITS-1:0]                   tag;             // processor tag, not memory addr tag
-    logic                                  valid;
-  } mshr_entry_t;
 
-  mshr_entry_t                  mshr_entries [MSHR_COUNT-1:0];
+  l1dpack::mshr_entry_t                  mshr_entries [MSHR_COUNT-1:0];
 
   // Add enqueue and dequeue signals for each MSHR queue
-  logic        [MSHR_COUNT-1:0] mshr_enqueue;
-  logic        [MSHR_COUNT-1:0] mshr_dequeue;
-  mshr_entry_t                  mshr_outputs [MSHR_COUNT-1:0];
-  logic        [MSHR_COUNT-1:0] mshr_empty;
-  logic        [MSHR_COUNT-1:0] mshr_full;
+  logic                 [MSHR_COUNT-1:0] mshr_enqueue;
+  logic                 [MSHR_COUNT-1:0] mshr_dequeue;
+  l1dpack::mshr_entry_t                  mshr_outputs [MSHR_COUNT-1:0];
+  logic                 [MSHR_COUNT-1:0] mshr_empty;
+  logic                 [MSHR_COUNT-1:0] mshr_full;
 
 
 
@@ -608,15 +621,14 @@ module l1_data_cache #(
   end
 
   /* MSHR QUEUES */
-  typedef mshr_entry_t mshr_full_t[16-1:0];
+  typedef l1dpack::mshr_entry_t mshr_full_t[16-1:0];
   mshr_full_t mshr_queue_full[MSHR_COUNT-1:0];
 
   genvar i;
   generate
     for (i = 0; i < MSHR_COUNT; i++) begin : mshr_queues
       mshr_queue #(
-          .QUEUE_SIZE(16),
-          .mem_request_t(mshr_entry_t)
+          .QUEUE_SIZE(16)
       ) mshr_queue_inst (
           .clk_in(clk_in),
           .rst_in(flush_in_reg),
@@ -722,7 +734,60 @@ module l1_data_cache #(
   assign lc_value_out = lc_value_out_reg;
   assign lc_we_out = lc_we_out_reg;
   assign lsu_tag_out = lsu_tag_out_reg;
-
-
 endmodule : l1_data_cache
 
+
+
+module mshr_queue #(
+    parameter QUEUE_SIZE = 16
+) (
+    input logic clk_in,
+    input logic rst_in,
+    input logic enqueue_in,
+    input logic dequeue_in,
+    input l1dpack::mshr_entry_t req_in,
+    input logic [31:0] cycle_count,
+    output l1dpack::mshr_entry_t req_out,
+    output logic empty,
+    output logic full,
+    output l1dpack::mshr_entry_t queue_read_only[QUEUE_SIZE-1:0]
+);
+  l1dpack::mshr_entry_t queue[QUEUE_SIZE-1:0];
+  l1dpack::mshr_entry_t next_queue[QUEUE_SIZE-1:0];
+  logic [$clog2(QUEUE_SIZE)-1:0] next_head;
+  logic [$clog2(QUEUE_SIZE):0] next_size;
+  logic [$clog2(QUEUE_SIZE)-1:0] head;
+  logic [$clog2(QUEUE_SIZE):0] size;
+  always_ff @(posedge clk_in or posedge rst_in) begin
+    if (rst_in) begin
+      head <= 0;
+      size <= 0;
+    end else begin
+      queue <= next_queue;
+      size  <= next_size;
+      head  <= next_head;
+    end
+    // $display("Size %d", size);
+  end
+
+  always_comb begin
+    next_queue = queue;
+    next_size  = size;
+    next_head  = head;
+
+    if (enqueue_in && !full) begin
+      next_queue[(head+size)%QUEUE_SIZE] = req_in;
+      next_size = size + 1;
+    end
+    if (dequeue_in && !empty) begin
+      next_size = size - 1;
+      next_head = (head + 4'b1) & {$clog2(QUEUE_SIZE) {1'b1}};  // % QUEUE_SIZE
+      // $display("dequeuing \n");
+    end
+  end
+  // Full & Empty Flags
+  assign req_out = queue[head];
+  assign full = (size == QUEUE_SIZE);
+  assign empty = (size == 0);
+  assign queue_read_only = queue;
+endmodule : mshr_queue
