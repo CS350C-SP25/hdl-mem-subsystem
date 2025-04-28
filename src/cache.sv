@@ -65,7 +65,7 @@ module cache #(
   logic hc_valid_reg;
   logic hc_ready_reg;
   logic [ADDR_BITS-1:0] hc_addr_reg;
-  logic [W-1:0] hc_value_reg;
+  logic [63:0] hc_value_reg;
   logic hc_we_reg;
   logic lc_valid_reg;
   logic lc_ready_reg;
@@ -76,29 +76,26 @@ module cache #(
   logic lc_valid_out_reg;
   logic lc_ready_out_reg;
   logic [ADDR_BITS-1:0] lc_addr_out_reg;
-  logic [W-1:0] lc_value_out_reg;
+  logic [63:0] lc_value_out_reg;
   logic we_out_reg;
   logic hc_valid_out_reg;
   logic hc_ready_out_reg;
   logic hc_we_out_reg;
   logic [ADDR_BITS-1:0] hc_addr_out_reg;
-  logic [W-1:0] hc_value_out_reg;
-
+  logic [63:0] hc_value_out_reg;
 
   // Temporary outputs from combinational logic
   logic lc_valid_out_comb;
   logic lc_ready_out_comb;
   logic [ADDR_BITS-1:0] lc_addr_out_comb;
-  logic [W-1:0] lc_value_out_comb;
+  logic [63:0] lc_value_out_comb;
   logic we_out_comb;
   logic hc_valid_out_comb;
   logic hc_ready_out_comb;
   logic hc_we_out_comb;
   logic [ADDR_BITS-1:0] hc_addr_out_comb;
-  logic [W-1:0] hc_value_out_comb;
+  logic [63:0] hc_value_out_comb;
 
-
-  // TODO(L1 Cache Team): Implement a cache like this.
 
   // Data array    
   typedef logic [B * 8-1:0] cache_line_t;
@@ -140,6 +137,9 @@ module cache #(
   logic [LRU_BITS-1:0] plru_bits[NUM_SETS];  // PLRU state bits for each set
   logic [LRU_BITS-1:0] plru_temp[NUM_SETS];  // Temporary PLRU bits for update
 
+  logic [LRU_BITS-1:0] temp_plru[NUM_SETS];
+  logic [LRU_BITS-1:0] reg_plru[NUM_SETS];
+
 
   logic hit;
   cache_line_t hit_data;
@@ -179,7 +179,7 @@ module cache #(
   logic [SET_INDEX_BITS-1:0] cur_set;  // = lc_valid_reg ? lc_set : hc_set;
   logic [TAG_BITS-1:0] cur_tag;  //  = lc_valid_reg ? lc_tag : hc_tag;
   logic [BLOCK_OFFSET_BITS-1:0] cur_offset;  // = lc_valid_reg ? lc_offset : hc_offset;
-  logic [W-1:0] cur_data;  // = lc_valid_reg ? lc_value_reg : hc_value_reg;
+  logic [63:0] cur_data;  // = lc_valid_reg ? lc_value_reg : hc_value_reg;
   logic cur_hit;
 
   assign cur_set = lc_valid_reg ? lc_set : hc_set;
@@ -199,37 +199,7 @@ module cache #(
   cache_line_t evict_data_reg;
 
   logic [A-1:0] victim_way_reg;
-  function automatic logic [LRU_BITS-1:0] update_plru(logic [LRU_BITS-1:0] current_plru, int way);
-    int depth = $clog2(A);
-    logic [LRU_BITS-1:0] new_plru = current_plru;
-    int node = 0;
-    logic bit_i;
-    int temp;
 
-    for (int i = depth - 1; i >= 0; i--) begin
-      temp = (way >> i) & 1;
-      bit_i = temp[0];
-      new_plru[node] = ~bit_i;
-      node = 2 * node + 1 + int'(bit_i);
-      if (node >= LRU_BITS) break;
-    end
-    return new_plru;
-  endfunction
-
-  function automatic int get_victim_way(logic [LRU_BITS-1:0] plru);
-    int   depth = $clog2(A);
-    int   node = 0;
-    int   victim_way = 0;
-    logic dir;
-
-    for (int i = 0; i < depth; i++) begin
-      dir = plru[node];
-      victim_way = (victim_way << 1) | (dir ? 1 : 0);
-      node = 2 * node + 1 + int'(dir);
-      if (node >= LRU_BITS) break;
-    end
-    return victim_way;
-  endfunction
 
   always_comb begin : generic_cache_combinational
     next_state = cur_state;
@@ -237,16 +207,15 @@ module cache #(
     lc_valid_comb = 0;
     hc_valid_comb = 0;
     hc_ready_comb = 0;
-    hc_ready_out = 0;
+    // hc_ready_out = 0;
     lc_ready_comb = 0;
-    lc_ready_out = 0;
+    // lc_ready_out = 0;
     // lc_addr_out = 0;
     changed_way = hit_way_reg;
     cache_temp = cache_data;
     cur_dirty = 0;
     tag_temp = tag_array;
     hc_value_out_comb = 0;
-    hc_ready_comb = (cur_state == IDLE);
     we_out_comb = 0;
     lc_value_out_comb = 0;
     lc_addr_out_comb = 0;
@@ -255,134 +224,146 @@ module cache #(
 
     plru_temp = plru_state;
 
+    temp_plru = reg_plru;
+
     flush_complete = flush_complete_reg;
 
     case (cur_state)
       IDLE: begin
-        if (flush_reg && !flush_complete) begin
-          hc_ready_comb = 1;
+        if (flush_reg) begin
+          // delete all data
           next_state = FLUSH_CACHE_STATE;
-        end else begin
-          flush_complete = 0;
-          next_state = (lc_valid_reg || hc_valid_reg) ? LOOKUP : IDLE;  // check hit or miss
-          // only 1 direction can be ready at a time
-          if (lc_valid_reg) begin
-            lc_ready_comb = 1;
-            lc_ready_out  = 1;
-          end else if (hc_valid_reg) begin
-            hc_ready_comb = 1;
-            hc_ready_out  = 1;
-          end
+        end else if (lc_valid_reg || hc_valid_reg) begin
+          // go to check if hit
+          lc_ready_comb = lc_valid_reg ? 1 : 0;
+          hc_ready_comb = lc_valid_reg ? 0 : 1;
+          next_state = LOOKUP;
         end
       end
+
       LOOKUP: begin
-        for (int i = 0; i < A; i++) begin
-          if (tag_array[i][cur_set].tag == cur_tag && tag_array[i][cur_set].valid) begin
+
+        for (int w = 0; w < A; w++) begin
+          if (tag_array[w][cur_set].valid && tag_array[w][cur_set].tag == cur_tag) begin
+            // we found this in here, we can mark it as a HIT
             cur_hit = 1;
-            changed_way = i;
+            changed_way = w;  // the way we found this in. 
+
+            temp_plru[cur_set] = (int'(temp_plru[cur_set]) + changed_way + 1 == A) ? 0 : LRU_BITS'(int'(temp_plru[cur_set]) + changed_way + 1);
+            // sodais: break? or nah could complete plru logic here too tbh
+            break;
           end
         end
 
-        if (lc_valid_reg || cl_in_reg) begin
-          changed_way = get_victim_way(plru_state[cur_set]);
-          plru_temp[cur_set] = update_plru(plru_state[cur_set], changed_way);
-          next_state = tag_array[changed_way][cur_set].dirty && tag_array[changed_way][cur_set].tag != cur_tag ? EVICT_BLOCK : WRITE_CACHE;
-        end else if (cur_hit) begin
-          changed_way = get_victim_way(plru_state[cur_set]);
-
-          plru_temp[cur_set] = update_plru(plru_state[cur_set], changed_way);
-
-          if (hc_we_reg) begin
-            next_state = WRITE_CACHE;  // write data to cache if this is a write (or response from LLC)
+        if (!cur_hit) begin
+          changed_way = int'(temp_plru[cur_set]);
+          // if there is a write (either from LC or from HC)
+          if (hc_we_reg || lc_valid_reg) begin
+            // temp_plru[cur_set] = LRU_BITS'(int'(temp_plru[cur_set]) + changed_way + 1);
+            if (tag_array[LRU_BITS'(changed_way)][cur_set].valid && tag_array[LRU_BITS'(changed_way)][cur_set].dirty) begin
+              // need to evict
+              $display("hit but evict necessary");
+              next_state = EVICT_BLOCK;
+            end else if (lc_valid_reg) begin
+              // can just install data into the way
+              $display("writing directly on a miss");
+              next_state = WRITE_CACHE;
+            end else begin
+              next_state = SEND_LOWER_CACHE_REQ;
+            end
           end else begin
-            // this must be a read from HC
+            $display("sending req lower");
+            // we missed on a read
+            next_state = SEND_LOWER_CACHE_REQ;
+          end
+        end else if (lc_valid_reg || hc_valid_reg) begin
+          if (lc_valid_reg || hc_we_reg) begin
+            // this is a write
+            next_state = WRITE_CACHE;
+          end else begin
             next_state = RESPOND_HC;
           end
+          // sodais: these same signals set us from idle to this state, will these go low when we get to this state
         end else begin
-          changed_way = get_victim_way(plru_state[cur_set]);
-          next_state  = SEND_LOWER_CACHE_REQ;
+          // sodais: ? when would this happen 
+          next_state = IDLE;
         end
       end
-
+      // sodais: where are the other conditions (prob havent written them yet im assuming ur still going)
       SEND_LOWER_CACHE_REQ: begin
-        lc_valid_comb = 1;  // set out to one, we are sending request
-        lc_addr_out_comb = {hc_tag, hc_set, {BLOCK_OFFSET_BITS{1'b0}}};
-        if (~lc_ready_reg) begin
-          // not ready, we'll stay in this state until it is
-          next_state = cur_state;
-        end else begin
-          // cache is ready, move to waiting for next req
+        // send requset to the lower cache
+        lc_valid_comb = 1;
+        lc_addr_out_comb = hc_addr_reg;
+        we_out_comb = 0;
+
+        if (lc_ready_reg) begin
           next_state = IDLE;
         end
       end
 
+      RESPOND_HC: begin
+        hc_valid_comb = 1;
+        hc_value_out_comb = cache_data[LRU_BITS'(changed_way)][cur_set][cur_offset*8+:64];
+        temp_plru[cur_set] = (int'(temp_plru[cur_set]) + changed_way + 1 == A) ? 0 : LRU_BITS'(int'(temp_plru[cur_set]) + changed_way + 1);
 
-      WRITE_CACHE: begin
-        if (cl_in_reg || lc_valid_reg) begin
-          cache_temp[hit_way_reg][cur_set] = lc_valid_reg ? lc_value_reg : cache_line_in_reg;
-        end else begin
-          cache_temp[hit_way_reg][cur_set][cur_offset*8+:W] = cur_data;
+        if (hc_ready_reg) begin
+          next_state = IDLE;
+        end
+      end
+
+      FLUSH_CACHE_STATE: begin
+        for (int w = 0; w < A; w++) begin
+          for (int set = 0; set < NUM_SETS; set++) begin
+            tag_temp[w][set] = '0;
+          end
         end
 
-        tag_temp[hit_way_reg][cur_set].valid = 1;
-        tag_temp[hit_way_reg][cur_set].tag = cur_tag;
-        tag_temp[hit_way_reg][cur_set].dirty = (lc_valid_reg) ? 0 : 1; // only dirty if its a write from hc, not lc
+        next_state = IDLE;
+      end
+
+      WRITE_CACHE: begin
+        if (lc_valid_reg) begin
+          cache_temp[LRU_BITS'(changed_way)][cur_set] = lc_value_reg;
+        end else if (hc_valid_reg) begin
+          if (cl_in_reg) begin
+            cache_temp[LRU_BITS'(changed_way)][cur_set] = cache_line_in_reg;
+          end else begin
+            cache_temp[LRU_BITS'(changed_way)][cur_set][cur_offset*8+:64] = hc_value_reg;
+          end
+        end
+
+        tag_temp[LRU_BITS'(changed_way)][cur_set].valid = 1;
+        tag_temp[LRU_BITS'(changed_way)][cur_set].dirty = lc_valid_reg ? 0 : 1;
+        tag_temp[LRU_BITS'(changed_way)][cur_set].tag = cur_tag;
 
         next_state = IDLE;
       end
 
       EVICT_BLOCK: begin
+        evict_data = cache_data[LRU_BITS'(changed_way)][cur_set];
         lc_valid_comb = 1;
-        we_out_comb = 1;  // Indicate write to lower cache
-        lc_addr_out_comb = {
-          tag_array[hit_way_reg][cur_set].tag, cur_set, {BLOCK_OFFSET_BITS{1'b0}}
-        };
-
-        // $display("evicting in the cahce module\n");
-        evict_data = cache_data[hit_way_reg][cur_set];
-        next_state = EVICT_WAIT;
-      end
-
-      // In the EVICT_WAIT state:
-      EVICT_WAIT: begin
+        we_out_comb = 1;
         if (lc_ready_reg) begin
-          // Eviction write accepted, cache needs to write the new data
           next_state = WRITE_CACHE;
-        end else begin
-          next_state = EVICT_WAIT;
         end
       end
 
-      FLUSH_CACHE_STATE: begin
-        cache_temp = cache_flushed;
-        flush_complete = 1;
-        for (int i = 0; i < A; i++) begin
-          for (int j = 0; j < NUM_SETS; j++) begin
-            tag_temp[i][j].valid = 0;
-            tag_temp[i][j].dirty = 0;
-          end
-        end
+      EVICT_WAIT: begin
+        lc_valid_comb = 1;
+        evict_data = cache_data[LRU_BITS'(changed_way)][cur_set];
+
+      end
+
+      default: begin
         next_state = IDLE;
       end
-
-      RESPOND_HC: begin  // send data to HC
-        for (int i = 0; i < A; i++) begin
-          if (tag_array[i][cur_set].tag == cur_tag && tag_array[i][cur_set].valid) begin
-            changed_way = i;
-          end
-        end
-
-        hc_value_out_comb = cache_data[changed_way][cur_set][cur_offset*8+:W];
-        hc_valid_comb = 1;
-        hc_addr_out_comb = {cur_tag, cur_set, cur_offset};
-        next_state = hc_ready_reg ? IDLE : RESPOND_HC;
-      end
-
-      default: next_state = IDLE;
     endcase
 
-    $monitor("[%0t][CACHE] State is %d, Offset is %h, Set is %h, Tag is %h, Addr is %h", $time,
-             cur_state, cur_offset, cur_set, cur_tag, hc_addr_reg);
+    $monitor(
+        "[%0t][CACHE] State is %d, Offset is %h, Set is %h, Tag is %h, Addr is %h, Dirty is now: %b",
+        $time, cur_state, cur_offset, cur_set, cur_tag, lc_valid_reg ? lc_addr_reg : hc_addr_reg,
+        tag_temp[hit_way_reg][cur_set].dirty);
+
     // $monitor("[CACHE] Cache data in 0x%h, Line in reg: 0x%h", lc_value_reg, cache_line_in_reg);
   end : generic_cache_combinational
 
@@ -430,7 +411,7 @@ module cache #(
         lc_valid_reg <= lc_valid_in;
         lc_addr_reg  <= lc_addr_in;
         lc_value_reg <= lc_value_in;
-        {cur_tag, cur_set, cur_offset} = (lc_valid_in) ? lc_addr_in : hc_addr_in;
+        // {cur_tag, cur_set, cur_offset} <= (lc_valid_reg) ? lc_addr_in : hc_addr_in;
         cache_line_in_reg <= cache_line_in;
         cl_in_reg <= cl_in;
       end
@@ -449,13 +430,19 @@ module cache #(
       lc_addr_out <= lc_addr_out_comb;
       hc_addr_out <= hc_addr_out_comb;
       hc_value_out <= hc_value_out_comb;
+      reg_plru <= temp_plru;
+      cache_data <= cache_temp;
+      tag_array <= tag_temp;
+      lc_ready_out <= lc_ready_comb;
+      hc_ready_out <= hc_ready_comb;
+      hit_way_reg <= changed_way;
 
       // DEBUG STATEMENTS
       if (cur_state == LOOKUP) begin
         if (lc_valid_reg || cl_in_reg) begin
           $display("[CACHE] considering dirty %b for set 0x%x",
-                   tag_array[changed_way][cur_set].dirty, cur_set);
-          if (tag_array[changed_way][cur_set].dirty) begin
+                   tag_array[LRU_BITS'(changed_way)][cur_set].dirty, cur_set);
+          if (tag_array[LRU_BITS'(changed_way)][cur_set].dirty) begin
             $display("[CACHE] we evicted 🌾 at %x", hc_addr_in);
           end
         end else if (!cur_hit) begin
@@ -463,28 +450,12 @@ module cache #(
         end
       end else if (cur_state == RESPOND_HC) begin
         $display("[CACHE] Read value %x for addr %x, returning to higher cache",
-                 cache_data[changed_way][cur_set][cur_offset*8+:W], {cur_tag, cur_set, cur_offset});
+                 cache_data[LRU_BITS'(changed_way)][cur_set][cur_offset*8+:64], {cur_tag, cur_set,
+                                                                                 cur_offset});
       end
-      flush_complete_reg <= flush_complete;
     end
   end
 
   assign lc_value_out = evict_data_reg;
 
-  always_ff @(negedge clk_in) begin
-    // data will either stay the same or be updated
-    cache_data <= cache_temp;
-    tag_array <= tag_temp;
-    // hc_ready_out <= hc_ready_comb;
-    // lc_ready_out <= lc_ready_comb;
-    // hc_valid_out <= hc_valid_comb;
-    // lc_valid_out <= lc_valid_comb;
-    hit_reg <= cur_hit;
-    hit_way_reg <= changed_way;
-
-    if (next_state == IDLE) begin
-      hit_reg <= 0;
-      hit_way_reg <= 0;
-    end
-  end
 endmodule : cache
