@@ -1,4 +1,4 @@
-`timescale 1ns / 1ps
+
 
 module memory_subsystem #(
     parameter int TAG_WIDTH = 10,
