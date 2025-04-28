@@ -383,23 +383,23 @@ module l1_data_cache #(
               //   end
               // end
 
-              l1dpack::mshr_entry_t current_mshr_entry;  // Declare intermediate variable
-              needToAdd = 1;  // Assume we need to add unless we find a forwardable write
+              // l1dpack::mshr_entry_t current_mshr_entry;  // Declare intermediate variable
+              // needToAdd = 1;  // Assume we need to add unless we find a forwardable write
 
-              for (int i = 0; i < 16; i++) begin  // Assuming QUEUE_SIZE is 16 based on loop bound
-                // Assign to the intermediate variable first
-                current_mshr_entry = mshr_queue_full[pos][i];
+              // for (int i = 0; i < 16; i++) begin  // Assuming QUEUE_SIZE is 16 based on loop bound
+              //   // Assign to the intermediate variable first
+              //   current_mshr_entry = mshr_queue_full[pos][i];
 
-                // Now access members via the intermediate variable
-                if (current_mshr_entry.paddr == cur_addr && current_mshr_entry.valid && current_mshr_entry.we) begin
-                  // we have a write, we can simply forward this value!
-                  lsu_value_out_comb = current_mshr_entry.data;
-                  needToAdd = 0;
-                  next_state = SEND_RESP_HC;
-                  // Optional: break the loop if you only need the first match
-                  // break;
-                end
-              end
+              //   // Now access members via the intermediate variable
+              //   if (current_mshr_entry.paddr == cur_addr && current_mshr_entry.valid && current_mshr_entry.we) begin
+              //     // we have a write, we can simply forward this value!
+              //     lsu_value_out_comb = current_mshr_entry.data;
+              //     needToAdd = 0;
+              //     next_state = SEND_RESP_HC;
+              //     // Optional: break the loop if you only need the first match
+              //     // break;
+              //   end
+              // end
 
               if (needToAdd) begin
                 // we weren't able to find any writes to the block, lets add a new queue entry
