@@ -621,8 +621,8 @@ module l1_data_cache #(
   end
 
   /* MSHR QUEUES */
-  typedef l1dpack::mshr_entry_t mshr_full_t[16-1:0];
-  mshr_full_t mshr_queue_full[MSHR_COUNT-1:0];
+  typedef l1dpack::mshr_entry_t [16-1:0] mshr_full_t;
+  mshr_full_t [MSHR_COUNT-1:0] mshr_queue_full;
 
   genvar i;
   generate
@@ -750,10 +750,10 @@ module mshr_queue #(
     output l1dpack::mshr_entry_t req_out,
     output logic empty,
     output logic full,
-    output l1dpack::mshr_entry_t queue_read_only[QUEUE_SIZE-1:0]
+    output l1dpack::mshr_entry_t [QUEUE_SIZE-1:0] queue_read_only
 );
-  l1dpack::mshr_entry_t queue[QUEUE_SIZE-1:0];
-  l1dpack::mshr_entry_t next_queue[QUEUE_SIZE-1:0];
+  l1dpack::mshr_entry_t [QUEUE_SIZE-1:0] queue;
+  l1dpack::mshr_entry_t [QUEUE_SIZE-1:0] next_queue;
   logic [$clog2(QUEUE_SIZE)-1:0] next_head;
   logic [$clog2(QUEUE_SIZE):0] next_size;
   logic [$clog2(QUEUE_SIZE)-1:0] head;
