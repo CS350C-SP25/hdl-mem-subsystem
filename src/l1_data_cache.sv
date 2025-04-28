@@ -1,3 +1,5 @@
+`include "mem_control/comb_util.sv"
+
 /*
  The L1 Data cache is expected to be:
  - PIPT. However the addresses it accepts are virtual, so it must interface with
