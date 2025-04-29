@@ -365,12 +365,45 @@ module lsu_queue #(
         end
       end
     end
-  end
+    if (!rst_N_in) begin
+      reg_dispatch_valid    <= 1'b0;
+      reg_dispatch_is_store <= 1'b0;
+      reg_dispatch_addr     <= 64'd0;
+      reg_dispatch_value    <= 64'd0;
+      reg_dispatch_tag      <= '0;
+    end else begin
+      // If we do NOT currently have a valid dispatch, and we found a candidate
+      // then we start a new dispatch 
+      // reg dispatch valid dependent on what?
+      // dependent on if the memory interface accepted our instruction
 
-  // ----------------------------------------------------------------
-  // Enqueue logic
-  // ----------------------------------------------------------------
-  always_ff @(posedge clk_in) begin
+      //  $display("head ptr = %d", head_ptr);
+      // $display("candidate found = %d", candidate_found);
+      // $display("dispatch ready in = %d", dispatch_ready_in);
+      //     display_queue_status();
+
+      if (!reg_dispatch_valid && candidate_found && dispatch_ready_in) begin
+        // $display("im here, my tag is %d", queue[candidate_index].tag);
+        reg_dispatch_valid    <= 1'b1;
+        reg_dispatch_is_store <= (queue[candidate_index].op_type == OP_STORE);
+        reg_dispatch_addr     <= queue[candidate_index].addr;
+        reg_dispatch_value    <= queue[candidate_index].value;
+        reg_dispatch_tag      <= queue[candidate_index].tag;
+
+        if (candidate_kind == DISPATCH_FORWARD) begin
+          // Mark that entry done
+          queue[candidate_index].valid <= 1'b0;
+        end else begin
+          // Mark it as dispatched
+          // $display("setting dispatched for tag %d to 1", queue[candidate_index].tag);
+          queue[candidate_index].dispatched <= 1'b1;
+        end
+      end 
+            // **Important**: ONLY drop reg_dispatch_valid after the memory interface is "ready" (it latched us)
+      else if (reg_dispatch_valid && dispatch_ready_in) begin
+        reg_dispatch_valid <= 1'b0;  // this signal might be broken
+      end
+    end
     if (!rst_N_in) begin
       head_ptr <= '0;
       tail_ptr <= '0;
@@ -458,6 +491,13 @@ module lsu_queue #(
       end
 
     end
+  end
+
+  // ----------------------------------------------------------------
+  // Enqueue logic
+  // ----------------------------------------------------------------
+  always_ff @(posedge clk_in) begin
+
   end
 
   // ----------------------------------------------------------------
@@ -606,45 +646,7 @@ module lsu_queue #(
   logic [TAG_WIDTH-1:0] reg_dispatch_tag;
 
   always_ff @(posedge clk_in) begin
-    if (!rst_N_in) begin
-      reg_dispatch_valid    <= 1'b0;
-      reg_dispatch_is_store <= 1'b0;
-      reg_dispatch_addr     <= 64'd0;
-      reg_dispatch_value    <= 64'd0;
-      reg_dispatch_tag      <= '0;
-    end else begin
-      // If we do NOT currently have a valid dispatch, and we found a candidate
-      // then we start a new dispatch 
-      // reg dispatch valid dependent on what?
-      // dependent on if the memory interface accepted our instruction
 
-      //  $display("head ptr = %d", head_ptr);
-      // $display("candidate found = %d", candidate_found);
-      // $display("dispatch ready in = %d", dispatch_ready_in);
-      //     display_queue_status();
-
-      if (!reg_dispatch_valid && candidate_found && dispatch_ready_in) begin
-        // $display("im here, my tag is %d", queue[candidate_index].tag);
-        reg_dispatch_valid    <= 1'b1;
-        reg_dispatch_is_store <= (queue[candidate_index].op_type == OP_STORE);
-        reg_dispatch_addr     <= queue[candidate_index].addr;
-        reg_dispatch_value    <= queue[candidate_index].value;
-        reg_dispatch_tag      <= queue[candidate_index].tag;
-
-        if (candidate_kind == DISPATCH_FORWARD) begin
-          // Mark that entry done
-          queue[candidate_index].valid <= 1'b0;
-        end else begin
-          // Mark it as dispatched
-          // $display("setting dispatched for tag %d to 1", queue[candidate_index].tag);
-          queue[candidate_index].dispatched <= 1'b1;
-        end
-      end 
-            // **Important**: ONLY drop reg_dispatch_valid after the memory interface is "ready" (it latched us)
-      else if (reg_dispatch_valid && dispatch_ready_in) begin
-        reg_dispatch_valid <= 1'b0;  // this signal might be broken
-      end
-    end
   end
 
   // Drive the handshake outputs
@@ -763,6 +765,32 @@ module memory_interface #(
   // L1D Request Generation & Latching (outputs for dispatch)
   // ----------------------------------------------------------------
   always_ff @(posedge clk_in) begin
+
+  end
+
+  // ----------------------------------------------------------------
+  // Completion Generation (separate always_ff block)
+  // ----------------------------------------------------------------
+  //  monitors for a valid response (l1d_valid_in) ,
+  // generates the completion handshake accordingly.
+  always_ff @(posedge clk_in) begin
+    if (!rst_N_in) begin
+      completion_valid_out <= 1'b0;
+      completion_tag_out   <= '0;
+      completion_value_out <= 64'd0;
+    end else begin
+      if (l1d_valid_in) begin
+        l1d_ready_out = 1'b0;
+        completion_valid_out <= 1'b1;
+        completion_tag_out   <= l1d_tag_in;
+        if (!l1d_write_complete_in) completion_value_out <= l1d_value_in;
+        else completion_value_out <= 64'd0;
+      end else begin
+        completion_valid_out <= 1'b0;
+      end
+      l1d_ready_out = 1'b1;
+    end
+
     if (!rst_N_in) begin
       lat_is_store  <= 1'b0;
       lat_addr      <= 64'd0;
@@ -815,30 +843,6 @@ module memory_interface #(
 
         default: ;
       endcase
-    end
-  end
-
-  // ----------------------------------------------------------------
-  // Completion Generation (separate always_ff block)
-  // ----------------------------------------------------------------
-  //  monitors for a valid response (l1d_valid_in) ,
-  // generates the completion handshake accordingly.
-  always_ff @(posedge clk_in) begin
-    if (!rst_N_in) begin
-      completion_valid_out <= 1'b0;
-      completion_tag_out   <= '0;
-      completion_value_out <= 64'd0;
-    end else begin
-      if (l1d_valid_in) begin
-        l1d_ready_out = 1'b0;
-        completion_valid_out <= 1'b1;
-        completion_tag_out   <= l1d_tag_in;
-        if (!l1d_write_complete_in) completion_value_out <= l1d_value_in;
-        else completion_value_out <= 64'd0;
-      end else begin
-        completion_valid_out <= 1'b0;
-      end
-      l1d_ready_out = 1'b1;
     end
   end
 endmodule
